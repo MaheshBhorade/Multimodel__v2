@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Content Recognition Platform | Admin Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo"></div>
+        <div class="brand-text">
+          <h1>CRP Admin</h1>
+          <span>Edge Intelligence</span>
+        </div>
+      </div>
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="overview">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="9" rx="1" />
+            <rect x="14" y="3" width="7" height="5" rx="1" />
+            <rect x="14" y="12" width="7" height="9" rx="1" />
+            <rect x="3" y="16" width="7" height="5" rx="1" />
+          </svg>
+          Overview
+        </button>
+        <button class="nav-item" data-tab="review">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+            <path d="M12 8v4" />
+            <path d="M12 16h.01" />
+          </svg>
+          Review Queue
+          <span class="badge" id="review-badge">0</span>
+        </button>
+        <button class="nav-item" data-tab="library">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+          </svg>
+          Content Library
+        </button>
+        <button class="nav-item" data-tab="devices">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+            <line x1="6" y1="6" x2="6.01" y2="6" />
+            <line x1="6" y1="18" x2="6.01" y2="18" />
+          </svg>
+          Connected Devices
+        </button>
+        <button class="nav-item" data-tab="analytics">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+          Analytics Reports
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="refresh-controls">
+          <label class="switch-container">
+            <input type="checkbox" id="auto-refresh" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="refresh-label">Live Updates</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="manual-refresh">
+          Refresh Now
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <header class="top-header">
+        <div class="page-title">
+          <h2 id="current-tab-title">Dashboard Overview</h2>
+          <p id="current-tab-desc">Monitor stream status and system metrics in real-time.</p>
+        </div>
+        <div class="system-status">
+          <span class="status-indicator online"></span>
+          <span class="status-text">Server: Online</span>
+        </div>
+      </header>
+
+      <!-- TAB content: OVERVIEW -->
+      <section id="tab-overview" class="tab-pane active">
+        <!-- Metric Cards Grid -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="card-glow purple"></div>
+            <div class="metric-header">
+              <h3>Active Devices</h3>
+              <div class="metric-icon purple">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
+              </div>
+            </div>
+            <div class="metric-value" id="metric-devices">0</div>
+            <div class="metric-footer">
+              <span class="trend positive">● Live</span>
+              <span class="footer-desc">active nodes</span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="card-glow blue"></div>
+            <div class="metric-header">
+              <h3>Total Captures</h3>
+              <div class="metric-icon blue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              </div>
+            </div>
+            <div class="metric-value" id="metric-captures">0</div>
+            <div class="metric-footer">
+              <span class="trend positive" id="metric-rate">+10s</span>
+              <span class="footer-desc">capture interval</span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="card-glow orange"></div>
+            <div class="metric-header">
+              <h3>Review Queue</h3>
+              <div class="metric-icon orange">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+            </div>
+            <div class="metric-value" id="metric-reviews">0</div>
+            <div class="metric-footer">
+              <span class="trend warning" id="metric-ratio">0.0%</span>
+              <span class="footer-desc">unknown content</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Capture Logs Table -->
+        <div class="section-card">
+          <div class="card-header">
+            <h3>Real-Time Capture Log</h3>
+            <span class="caption">Showing latest 15 captures from all units</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="captures-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Device ID</th>
+                  <th>Snapshot</th>
+                  <th>Recognized Content</th>
+                  <th>Type</th>
+                  <th>Confidence</th>
+                  <th>Breakdown (V / A / O / L)</th>
+                </tr>
+              </thead>
+              <tbody id="captures-list">
+                <!-- Populated dynamically -->
+                <tr><td colspan="7" class="loading-state">Loading latest captures...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB content: REVIEW QUEUE -->
+      <section id="tab-review" class="tab-pane">
+        <div class="review-grid" id="review-list">
+          <!-- Populated dynamically -->
+          <div class="loading-state">Scanning for unknown captures...</div>
+        </div>
+      </section>
+
+      <!-- TAB content: LIBRARY -->
+      <section id="tab-library" class="tab-pane">
+        <div class="library-header">
+          <button class="btn btn-primary" id="btn-add-library">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 8px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Reference Entry
+          </button>
+        </div>
+        <div class="section-card">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Content ID</th>
+                  <th>Title</th>
+                  <th>Category</th>
+                  <th>Channel</th>
+                  <th>Audio FP</th>
+                  <th>OCR Keywords</th>
+                  <th>Visual / Logo Fingerprint</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="library-list">
+                <!-- Populated dynamically -->
+                <tr><td colspan="8" class="loading-state">Loading library...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB content: DEVICES -->
+      <section id="tab-devices" class="tab-pane">
+        <div class="section-card">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Device ID</th>
+                  <th>Status</th>
+                  <th>Location</th>
+                  <th>Total Captures</th>
+                  <th>Last Active</th>
+                </tr>
+              </thead>
+              <tbody id="devices-list">
+                <!-- Populated dynamically -->
+                <tr><td colspan="5" class="loading-state">Scanning edge network...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB content: ANALYTICS -->
+      <section id="tab-analytics" class="tab-pane">
+        <!-- Charts Layout Grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+          <div class="section-card" style="margin-bottom: 0;">
+            <div class="card-header">
+              <h3>Content Share Distribution</h3>
+              <span class="caption">Share of recognized content by category</span>
+            </div>
+            <div style="position: relative; height: 260px; display: flex; justify-content: center; align-items: center;">
+              <canvas id="share-chart" style="max-height: 240px; max-width: 240px;"></canvas>
+            </div>
+          </div>
+          <div class="section-card" style="margin-bottom: 0;">
+            <div class="card-header">
+              <h3>Top Advertisement Frequency</h3>
+              <span class="caption">Most frequently detected brand ads</span>
+            </div>
+            <div style="position: relative; height: 260px; display: flex; justify-content: center; align-items: center;">
+              <canvas id="ad-chart" style="max-height: 240px; width: 100%;"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Timeline / Flow log Card -->
+        <div class="section-card">
+          <div class="card-header">
+            <h3>Recent Content Playback Timeline</h3>
+            <span class="caption">Chronological transition log of OTT & TV content</span>
+          </div>
+          <div id="analytics-timeline" style="margin-top: 16px;">
+            <div class="loading-state">Generating timeline report...</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: Resolve Capture -->
+  <div class="modal-backdrop" id="resolve-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Resolve Unknown Capture</h3>
+        <button class="close-button" id="close-resolve-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="resolve-split">
+          <div class="resolve-preview">
+            <img id="resolve-img" src="" alt="Capture Frame">
+            <div class="meta-label">OCR Extracted:</div>
+            <pre class="ocr-preview" id="resolve-ocr"></pre>
+            <div class="meta-label">Audio Fingerprint:</div>
+            <pre class="ocr-preview" id="resolve-audio"></pre>
+          </div>
+          <form class="resolve-form" id="resolve-form">
+            <input type="hidden" id="resolve-capture-id">
+            <div class="form-group">
+              <label for="resolve-title">Content Title</label>
+              <input type="text" id="resolve-title" placeholder="e.g. Dilwale, Sony Max Ident" required>
+            </div>
+            <div class="form-group">
+              <label for="resolve-category">Category</label>
+              <select id="resolve-category" required>
+                <option value="channel">Channel / Network</option>
+                <option value="advertisement">Advertisement</option>
+                <option value="movie">Movie</option>
+                <option value="series">Series</option>
+                <option value="episode">Episode</option>
+                <option value="ott">OTT Service</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="resolve-channel">Channel Name (Optional)</label>
+              <input type="text" id="resolve-channel" placeholder="e.g. Sony Max, Star Plus">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Add to Library & Resolve</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add Content Library -->
+  <div class="modal-backdrop" id="add-library-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Create Reference Content Signature</h3>
+        <button class="close-button" id="close-add-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="add-library-form" class="modal-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="lib-title">Title</label>
+              <input type="text" id="lib-title" placeholder="e.g. Star Plus Ident" required>
+            </div>
+            <div class="form-group">
+              <label for="lib-category">Category</label>
+              <select id="lib-category" required>
+                <option value="channel">Channel</option>
+                <option value="advertisement">Advertisement</option>
+                <option value="movie">Movie</option>
+                <option value="series">Series</option>
+                <option value="ott">OTT</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="lib-channel">Channel Name (Optional)</label>
+            <input type="text" id="lib-channel" placeholder="e.g. Star Plus">
+          </div>
+          <div class="form-group">
+            <label for="lib-audio">Audio Signature</label>
+            <input type="text" id="lib-audio" placeholder="e.g. star-plus-jingle" required>
+          </div>
+          <div class="form-group">
+            <label for="lib-ocr">OCR Keywords (Space separated)</label>
+            <input type="text" id="lib-ocr" placeholder="e.g. star plus live serial">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="lib-visual">Visual Fingerprint (4 floats, comma separated)</label>
+              <input type="text" id="lib-visual" placeholder="e.g. 0.8, 0.2, 0.5, 0.7" required>
+            </div>
+            <div class="form-group">
+              <label for="lib-logo">Logo Fingerprint (4 floats, comma separated)</label>
+              <input type="text" id="lib-logo" placeholder="e.g. 0.95, 0.15, 0.4, 0.8" required>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Save to Content Library</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Center -->
+  <div class="toast-container" id="toast-container"></div>
+  <script src="dashboard.js"></script>
+</body>
+</html>

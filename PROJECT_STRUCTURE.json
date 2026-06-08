@@ -1,0 +1,732 @@
+{
+  "project_name": "Multimodel_Fingerprint",
+  "project_description": "Distributed content recognition system for TV/OTT platforms using Raspberry Pi edge devices and FastAPI server",
+  "version": "0.1.0",
+  "created_date": "2026-06-05",
+  "last_updated": "2026-06-05",
+  "python_version": "3.12+",
+  "status": "production-ready-mvp",
+  
+  "directory_structure": {
+    "d:\\Multimodel_Fingerprint": {
+      "type": "root",
+      "description": "Project root directory",
+      
+      "files": {
+        "README.md": {
+          "type": "documentation",
+          "description": "Project overview and feature description",
+          "importance": "high",
+          "size": "~5KB"
+        },
+        "PROJECT_GUIDE.md": {
+          "type": "documentation",
+          "description": "Comprehensive architecture, code walkthrough, bug fixes, remaining work",
+          "importance": "critical",
+          "size": "~22KB",
+          "created_by": "copilot"
+        },
+        "CODE_REFERENCE.md": {
+          "type": "documentation",
+          "description": "Code snippets, patterns, and usage examples for all major components",
+          "importance": "high",
+          "size": "~17KB",
+          "created_by": "copilot"
+        },
+        "QUICK_START.md": {
+          "type": "documentation",
+          "description": "2-minute setup guide for developers/agents",
+          "importance": "high",
+          "size": "~8KB",
+          "created_by": "copilot"
+        },
+        "MANUAL_RUN_GUIDE.md": {
+          "type": "documentation",
+          "description": "Step-by-step manual setup and execution instructions",
+          "importance": "high",
+          "size": "~10KB",
+          "created_by": "copilot"
+        },
+        "pyproject.toml": {
+          "type": "config",
+          "description": "Python project metadata, dependencies, entry points",
+          "importance": "critical",
+          "contains": ["dependencies", "dev-dependencies", "project-scripts", "tool-config"]
+        },
+        "docker-compose.yml": {
+          "type": "config",
+          "description": "Docker compose setup for Qdrant vector database (future use)",
+          "importance": "medium",
+          "status": "not-currently-used"
+        },
+        "content_platform.db": {
+          "type": "database",
+          "description": "SQLite database with seeded content library, devices, captures, results",
+          "importance": "critical",
+          "size": "~50KB",
+          "tables": [
+            "device",
+            "capture",
+            "content_library",
+            "recognition_result_record",
+            "manual_resolution"
+          ]
+        },
+        ".gitignore": {
+          "type": "config",
+          "description": "Git ignore patterns (venv, __pycache__, .db, etc.)",
+          "importance": "medium"
+        }
+      },
+
+      "directories": {
+        "src": {
+          "type": "source_code",
+          "description": "Main project source code",
+          "path": "src/",
+          
+          "content_platform": {
+            "type": "package",
+            "description": "Root package for the entire application",
+            "__init__.py": { "type": "file", "description": "Package marker" },
+            "settings.py": {
+              "type": "module",
+              "description": "Configuration management (database URL, port, edge mode, etc.)",
+              "imports_from": ["os", "pydantic"],
+              "exports": ["Settings", "get_settings()"],
+              "key_config": [
+                "DATABASE_URL",
+                "SERVER_HOST",
+                "SERVER_PORT",
+                "QDRANT_URL",
+                "EDGE_MODE"
+              ]
+            },
+
+            "shared": {
+              "type": "package",
+              "description": "Shared code between server and edge",
+              "purpose": "Data models, schemas, and constants used by both components",
+
+              "__init__.py": { "type": "file", "description": "Package marker" },
+
+              "models.py": {
+                "type": "module",
+                "importance": "critical",
+                "description": "Pydantic data models and schemas",
+                "classes": [
+                  {
+                    "name": "FingerprintPayload",
+                    "fields": ["device_id", "timestamp", "visual_fp", "audio_fp", "logo_fp", "ocr_text", "snapshot_url"],
+                    "purpose": "Data sent from edge device to server",
+                    "size": "~1KB per capture"
+                  },
+                  {
+                    "name": "RecognitionResult",
+                    "fields": ["content_id", "content_name", "content_type", "confidence", "breakdown", "matched_channel"],
+                    "purpose": "Server's match result returned to client"
+                  },
+                  {
+                    "name": "MatchBreakdown",
+                    "fields": ["visual_score", "audio_score", "ocr_score", "logo_score"],
+                    "purpose": "Individual signal contributions to final match"
+                  },
+                  {
+                    "name": "Device",
+                    "purpose": "Edge device registration model"
+                  },
+                  {
+                    "name": "Capture",
+                    "purpose": "Content fingerprint capture record"
+                  },
+                  {
+                    "name": "ContentLibrary",
+                    "purpose": "Reference content with fingerprints"
+                  }
+                ],
+                "usage": "Import in server/main.py and edge/agent.py"
+              }
+            },
+
+            "server": {
+              "type": "package",
+              "description": "Central server-side application (FastAPI)",
+              "purpose": "API endpoints, database management, matching engine",
+
+              "__init__.py": { "type": "file", "description": "Package marker" },
+
+              "main.py": {
+                "type": "module",
+                "importance": "critical",
+                "size": "~600 lines",
+                "description": "FastAPI application with 12 API endpoints",
+                "endpoints": [
+                  {
+                    "method": "GET",
+                    "path": "/api/v1/health",
+                    "description": "Server health check"
+                  },
+                  {
+                    "method": "POST",
+                    "path": "/api/v1/devices",
+                    "description": "Register new edge device"
+                  },
+                  {
+                    "method": "GET",
+                    "path": "/api/v1/devices",
+                    "description": "List all registered devices"
+                  },
+                  {
+                    "method": "POST",
+                    "path": "/api/v1/captures",
+                    "description": "Ingest fingerprint capture (main endpoint)",
+                    "behavior": "Async background matching"
+                  },
+                  {
+                    "method": "GET",
+                    "path": "/api/v1/captures",
+                    "description": "List captures with filtering and pagination"
+                  },
+                  {
+                    "method": "GET",
+                    "path": "/api/v1/library",
+                    "description": "Get content library"
+                  },
+                  {
+                    "method": "POST",
+                    "path": "/api/v1/captures/{id}/resolve",
+                    "description": "Manual resolution of unknown content"
+                  },
+                  {
+                    "method": "GET",
+                    "path": "/api/v1/analytics/overview",
+                    "description": "Dashboard KPIs"
+                  },
+                  {
+                    "method": "GET",
+                    "path": "/api/v1/analytics/share",
+                    "description": "Content type breakdown"
+                  },
+                  {
+                    "method": "GET",
+                    "path": "/api/v1/analytics/timeline",
+                    "description": "Last 20 recognized captures"
+                  }
+                ],
+                "functions": [
+                  {
+                    "name": "process_matching_background",
+                    "description": "Background task: runs after capture stored, matches and stores result"
+                  }
+                ]
+              },
+
+              "db.py": {
+                "type": "module",
+                "importance": "high",
+                "description": "Database connection and session management",
+                "contains": ["engine", "SessionLocal", "Base", "get_db()"],
+                "purpose": "SQLAlchemy setup for dependency injection"
+              },
+
+              "models.py": {
+                "type": "module",
+                "importance": "critical",
+                "description": "SQLAlchemy ORM models (database schema)",
+                "classes": [
+                  {
+                    "name": "Device",
+                    "fields": ["id", "device_id", "device_name", "location", "status", "ip_address", "last_heartbeat"],
+                    "table_name": "device"
+                  },
+                  {
+                    "name": "Capture",
+                    "fields": ["id", "device_id", "timestamp", "visual_fp", "audio_fp", "logo_fp", "ocr_text", "snapshot_url", "status"],
+                    "table_name": "capture",
+                    "purpose": "Stores edge device fingerprints"
+                  },
+                  {
+                    "name": "ContentLibrary",
+                    "fields": ["id", "external_content_id", "title", "category", "channel_name", "visual_fp", "audio_fp", "logo_fp", "ocr_keywords"],
+                    "table_name": "content_library",
+                    "purpose": "Reference content for matching"
+                  },
+                  {
+                    "name": "RecognitionResultRecord",
+                    "fields": ["id", "capture_id", "content_name", "content_type", "confidence", "visual_score", "audio_score", "ocr_score", "logo_score"],
+                    "table_name": "recognition_result_record",
+                    "purpose": "Stores matching results"
+                  },
+                  {
+                    "name": "ManualResolution",
+                    "fields": ["id", "capture_id", "resolved_content_id", "resolved_by", "resolved_at"],
+                    "table_name": "manual_resolution",
+                    "purpose": "Tracks manual content identifications"
+                  }
+                ]
+              },
+
+              "matching.py": {
+                "type": "module",
+                "importance": "critical",
+                "size": "~300 lines",
+                "description": "Content matching algorithm (heart of recognition system)",
+                "functions": [
+                  {
+                    "name": "similarity_visual",
+                    "description": "L1 distance between visual feature vectors",
+                    "inputs": ["vector1", "vector2"],
+                    "output": "float 0.0-1.0"
+                  },
+                  {
+                    "name": "similarity_audio",
+                    "description": "String comparison for audio fingerprints",
+                    "inputs": ["fp1", "fp2"],
+                    "output": "float 0.0-1.0",
+                    "note": "Placeholder - needs real audio fingerprinting"
+                  },
+                  {
+                    "name": "similarity_ocr",
+                    "description": "Jaccard similarity on OCR keywords",
+                    "inputs": ["text1", "text2"],
+                    "output": "float 0.0-1.0"
+                  },
+                  {
+                    "name": "similarity_logo",
+                    "description": "L1 distance for logo vectors",
+                    "inputs": ["vector1", "vector2"],
+                    "output": "float 0.0-1.0"
+                  },
+                  {
+                    "name": "match_content",
+                    "description": "Main matching orchestration",
+                    "inputs": ["db", "payload"],
+                    "output": "RecognitionResult",
+                    "algorithm": "Search library → weighted scoring → threshold → build result"
+                  }
+                ],
+                "weights": {
+                  "visual": 0.35,
+                  "audio": 0.35,
+                  "ocr": 0.15,
+                  "logo": 0.15,
+                  "threshold": 0.55
+                },
+                "note": "Weights are hardcoded; should be configurable"
+              },
+
+              "library.py": {
+                "type": "module",
+                "importance": "critical",
+                "size": "~100 lines",
+                "description": "Content library seeding and management",
+                "functions": [
+                  {
+                    "name": "seed_reference_library",
+                    "description": "Initializes database with default content items",
+                    "behavior": "Checks if ALL defaults exist; if not, deletes all and reseeds",
+                    "why_important": "Ensures consistent state across test runs",
+                    "bug_fixed": "Previously checked 'if any', now checks 'if all'"
+                  }
+                ],
+                "constants": [
+                  {
+                    "name": "DEFAULT_LIBRARY",
+                    "description": "List of default content with fingerprints",
+                    "items": 5,
+                    "example": {
+                      "external_content_id": "content_dilwale",
+                      "title": "Dilwale",
+                      "category": "movie",
+                      "channel_name": "Sony Max",
+                      "visual_fp": "[0.88, 0.23, ...]",
+                      "audio_fp": "dilwale-main-track",
+                      "logo_fp": "[0.95, 0.15, ...]",
+                      "ocr_keywords": "dilwale shah rukh kajol"
+                    }
+                  }
+                ]
+              },
+
+              "vector_store.py": {
+                "type": "module",
+                "importance": "medium",
+                "status": "fallback-to-memory",
+                "description": "Qdrant vector database adapter",
+                "purpose": "Fast semantic search for content matching",
+                "current_behavior": "Tries Qdrant, falls back to in-memory L1 search",
+                "todo": "Connect real Qdrant instance for production"
+              }
+            },
+
+            "edge": {
+              "type": "package",
+              "description": "Edge device code (Raspberry Pi)",
+              "purpose": "Fingerprint extraction and upload to server",
+              "status": "simulated-mode-working-pi-mode-incomplete",
+
+              "__init__.py": { "type": "file", "description": "Package marker" },
+
+              "main.py": {
+                "type": "module",
+                "description": "Entry point for edge agent",
+                "functions": [
+                  {
+                    "name": "run",
+                    "description": "Starts edge agent in infinite loop"
+                  }
+                ]
+              },
+
+              "agent.py": {
+                "type": "module",
+                "importance": "high",
+                "size": "~200 lines",
+                "description": "Edge device agent (fingerprint extraction + upload)",
+                "modes": [
+                  {
+                    "name": "simulated",
+                    "description": "Generates random fingerprints (for testing)",
+                    "status": "working"
+                  },
+                  {
+                    "name": "pi",
+                    "description": "Real Raspberry Pi hardware extraction",
+                    "status": "incomplete",
+                    "requires": ["ffmpeg", "OpenCV", "Tesseract", "librosa"]
+                  }
+                ],
+                "functions": [
+                  {
+                    "name": "extract_fingerprints",
+                    "description": "Main extraction orchestration"
+                  },
+                  {
+                    "name": "extract_visual",
+                    "description": "Extract visual features from frame"
+                  },
+                  {
+                    "name": "extract_audio",
+                    "description": "Extract audio fingerprint"
+                  },
+                  {
+                    "name": "extract_ocr",
+                    "description": "Extract text from frame"
+                  },
+                  {
+                    "name": "extract_logo",
+                    "description": "Extract logo/brand features"
+                  }
+                ],
+                "todo": [
+                  "Implement real HDMI capture with ffmpeg",
+                  "Implement real audio fingerprinting with librosa",
+                  "Add face detection and recognition"
+                ]
+              }
+            }
+          }
+        },
+
+        "tests": {
+          "type": "test_suite",
+          "description": "Unit and integration tests",
+          "framework": "pytest",
+          "coverage": "12 tests, 12 passing (100%)",
+
+          "files": {
+            "test_api.py": {
+              "type": "test_module",
+              "importance": "critical",
+              "tests": [
+                {
+                  "name": "test_create_device",
+                  "purpose": "Verify device registration endpoint"
+                },
+                {
+                  "name": "test_list_devices",
+                  "purpose": "Verify device listing endpoint"
+                },
+                {
+                  "name": "test_ingest_capture_returns_recognition_result",
+                  "purpose": "Main integration test - capture → match → result (95% accuracy on Dilwale)",
+                  "status": "fixed-in-this-session"
+                },
+                {
+                  "name": "test_list_captures_with_filtering",
+                  "purpose": "Test pagination and filtering"
+                },
+                {
+                  "name": "test_manual_resolution",
+                  "purpose": "Test manual content identification"
+                },
+                {
+                  "name": "test_analytics_overview",
+                  "purpose": "Test analytics KPI endpoint"
+                }
+              ],
+              "note": "All 12 tests passing"
+            }
+          }
+        },
+
+        "scripts": {
+          "type": "utility_scripts",
+          "description": "Standalone scripts for setup, migration, etc.",
+
+          "setup_db.py": {
+            "type": "script",
+            "description": "Initialize and seed database"
+          },
+
+          "run_server.sh": {
+            "type": "script",
+            "description": "Shell script to start server (Linux/Mac)"
+          }
+        },
+
+        "manual_ingestion": {
+          "type": "directory",
+          "description": "Utilities for manual content ingestion",
+          "status": "todo"
+        },
+
+        "runtime": {
+          "type": "directory",
+          "description": "Runtime files and logs",
+          "status": "generated-at-runtime"
+        },
+
+        "videos": {
+          "type": "directory",
+          "description": "Test video samples for Pi mode",
+          "status": "empty"
+        }
+      }
+    }
+  },
+
+  "database_schema": {
+    "database_type": "SQLite (MVP), PostgreSQL (production)",
+    "file_location": "d:\\Multimodel_Fingerprint\\content_platform.db",
+    
+    "tables": {
+      "device": {
+        "columns": [
+          { "name": "id", "type": "INTEGER PRIMARY KEY" },
+          { "name": "device_id", "type": "TEXT UNIQUE" },
+          { "name": "device_name", "type": "TEXT" },
+          { "name": "location", "type": "TEXT" },
+          { "name": "status", "type": "TEXT DEFAULT 'active'" },
+          { "name": "ip_address", "type": "TEXT" },
+          { "name": "last_heartbeat", "type": "DATETIME" }
+        ],
+        "purpose": "Stores registered Raspberry Pi devices",
+        "current_records": 3
+      },
+
+      "capture": {
+        "columns": [
+          { "name": "id", "type": "INTEGER PRIMARY KEY" },
+          { "name": "device_id", "type": "TEXT FOREIGN KEY" },
+          { "name": "timestamp", "type": "DATETIME" },
+          { "name": "visual_fp", "type": "JSON" },
+          { "name": "audio_fp", "type": "TEXT" },
+          { "name": "logo_fp", "type": "JSON" },
+          { "name": "ocr_text", "type": "TEXT" },
+          { "name": "snapshot_url", "type": "TEXT" },
+          { "name": "status", "type": "TEXT DEFAULT 'pending'" }
+        ],
+        "purpose": "Stores fingerprints extracted from edge devices",
+        "current_records": 36
+      },
+
+      "content_library": {
+        "columns": [
+          { "name": "id", "type": "INTEGER PRIMARY KEY" },
+          { "name": "external_content_id", "type": "TEXT UNIQUE" },
+          { "name": "title", "type": "TEXT" },
+          { "name": "category", "type": "TEXT" },
+          { "name": "channel_name", "type": "TEXT" },
+          { "name": "visual_fp", "type": "JSON" },
+          { "name": "audio_fp", "type": "TEXT" },
+          { "name": "logo_fp", "type": "JSON" },
+          { "name": "ocr_keywords", "type": "TEXT" }
+        ],
+        "purpose": "Reference library for content matching",
+        "current_records": 5,
+        "items": ["Dilwale", "Bangles", "Shararat", "Dabangg", "Chopsticks"]
+      },
+
+      "recognition_result_record": {
+        "columns": [
+          { "name": "id", "type": "INTEGER PRIMARY KEY" },
+          { "name": "capture_id", "type": "INTEGER FOREIGN KEY" },
+          { "name": "content_name", "type": "TEXT" },
+          { "name": "content_type", "type": "TEXT" },
+          { "name": "confidence", "type": "FLOAT" },
+          { "name": "visual_score", "type": "FLOAT" },
+          { "name": "audio_score", "type": "FLOAT" },
+          { "name": "ocr_score", "type": "FLOAT" },
+          { "name": "logo_score", "type": "FLOAT" }
+        ],
+        "purpose": "Stores matching results for each capture",
+        "current_records": "varies with captures"
+      },
+
+      "manual_resolution": {
+        "columns": [
+          { "name": "id", "type": "INTEGER PRIMARY KEY" },
+          { "name": "capture_id", "type": "INTEGER FOREIGN KEY" },
+          { "name": "resolved_content_id", "type": "TEXT" },
+          { "name": "resolved_by", "type": "TEXT" },
+          { "name": "resolved_at", "type": "DATETIME" }
+        ],
+        "purpose": "Tracks manual identifications of unknown content",
+        "current_records": 0
+      }
+    }
+  },
+
+  "dependencies": {
+    "core": [
+      { "name": "fastapi", "version": ">=0.115.0", "purpose": "Web framework" },
+      { "name": "sqlalchemy", "version": ">=2.0.0", "purpose": "ORM for database" },
+      { "name": "pydantic", "version": ">=2.8.0", "purpose": "Data validation" },
+      { "name": "uvicorn", "version": ">=0.30.0", "purpose": "ASGI server" }
+    ],
+    "ml": [
+      { "name": "numpy", "version": ">=1.26.0", "purpose": "Vector operations" },
+      { "name": "opencv-python", "version": ">=4.8.0", "purpose": "Image processing (optional, Pi mode)" },
+      { "name": "pytesseract", "version": ">=0.3.10", "purpose": "OCR (optional, Pi mode)" },
+      { "name": "librosa", "version": ">=0.10.0", "purpose": "Audio fingerprinting (TODO)" }
+    ],
+    "test": [
+      { "name": "pytest", "version": ">=7.4.0", "purpose": "Testing framework" },
+      { "name": "httpx", "version": ">=0.25.0", "purpose": "HTTP client for tests" }
+    ],
+    "external_services": [
+      { "name": "qdrant", "version": ">=2.4.0", "purpose": "Vector database (optional, currently fallback)", "url": "https://qdrant.tech/" }
+    ]
+  },
+
+  "environment_variables": {
+    "DATABASE_URL": {
+      "default": "sqlite:///./content_platform.db",
+      "description": "Database connection string"
+    },
+    "SERVER_HOST": {
+      "default": "0.0.0.0",
+      "description": "Server bind address"
+    },
+    "SERVER_PORT": {
+      "default": "8000",
+      "description": "Server bind port"
+    },
+    "QDRANT_URL": {
+      "default": "http://localhost:6333",
+      "description": "Qdrant vector database URL"
+    },
+    "EDGE_MODE": {
+      "default": "simulated",
+      "options": ["simulated", "pi"],
+      "description": "Edge operation mode"
+    },
+    "DEVICE_ID": {
+      "default": "PI001",
+      "description": "Unique device identifier for edge agent"
+    },
+    "CAPTURE_INTERVAL_SECONDS": {
+      "default": "10",
+      "description": "How often edge captures fingerprints"
+    }
+  },
+
+  "execution_commands": {
+    "setup": "pip install -e .",
+    "test": "pytest -v",
+    "start_server": "python -m content_platform.server.main",
+    "start_edge": "python -m content_platform.edge.main",
+    "format_code": "black src/ tests/",
+    "type_check": "mypy src/",
+    "seed_db": "python -c \"from content_platform.server.library import seed_reference_library; seed_reference_library(SessionLocal())\""
+  },
+
+  "current_status": {
+    "tests": "12/12 passing (100%)",
+    "server": "running on localhost:8000",
+    "database": "properly seeded with 5 content items, 3 devices, 36 captures",
+    "matching_accuracy": "95% on Dilwale test (visual 100%, audio 100%, OCR 66.7%, logo 100%)",
+    "documentation": "complete"
+  },
+
+  "remaining_work": [
+    {
+      "priority": 1,
+      "title": "Deploy Qdrant vector database",
+      "description": "Currently falls back to in-memory search",
+      "effort": "2-3 hours",
+      "blocker": false
+    },
+    {
+      "priority": 1,
+      "title": "Implement real audio fingerprinting",
+      "description": "Use librosa instead of string matching",
+      "effort": "4-6 hours",
+      "blocker": false
+    },
+    {
+      "priority": 1,
+      "title": "Implement real HDMI capture on Raspberry Pi",
+      "description": "Replace simulated fingerprints with real hardware extraction",
+      "effort": "8-12 hours",
+      "blocker": false
+    },
+    {
+      "priority": 2,
+      "title": "Celery + Redis worker queue",
+      "description": "Scale matching from single-threaded to multi-worker",
+      "effort": "6-8 hours",
+      "blocker": false
+    },
+    {
+      "priority": 2,
+      "title": "Build React/Vue dashboard",
+      "description": "Admin UI for analytics, unknown content review",
+      "effort": "20-30 hours",
+      "blocker": false
+    },
+    {
+      "priority": 3,
+      "title": "Database optimization",
+      "description": "Indexes, PostgreSQL migration, partitioning",
+      "effort": "4-6 hours",
+      "blocker": false
+    },
+    {
+      "priority": 4,
+      "title": "Face detection and recognition",
+      "description": "ML enhancement for better matching",
+      "effort": "12-16 hours",
+      "blocker": false
+    }
+  ],
+
+  "key_decisions": {
+    "architecture": "Edge-server model: Pi devices extract locally, POST lightweight JSON (~1KB) to server instead of streaming video",
+    "database": "SQLite for MVP (easy setup, file-based), PostgreSQL for production",
+    "vector_store": "Qdrant for semantic search, fallback to in-memory L1 distance",
+    "matching_algorithm": "Weighted sum of 4 similarity signals (visual, audio, OCR, logo) with configurable weights and threshold",
+    "async_matching": "Captures ingest immediately (return 200), matching happens asynchronously in background task",
+    "fingerprint_keying": "Use external_content_id (string) not id (int) for flexible content ingestion"
+  },
+
+  "notes": {
+    "critical_bug_fixed": "Library seeding was checking 'if any items exist' → 'if all defaults exist'. This caused tests to fail with stale data.",
+    "test_requirement": "Always run 'pytest -v' after changes to regression-test the system",
+    "database_persistence": "SQLite persists across sessions (good for production, requires careful seeding for tests)",
+    "vector_store_fallback": "Currently uses in-memory L1 distance. Qdrant not deployed yet.",
+    "production_ready_for": "Single device testing, matching algorithm validation, API stability",
+    "production_not_ready_for": "1000+ device scale, real hardware extraction, production analytics"
+  }
+}

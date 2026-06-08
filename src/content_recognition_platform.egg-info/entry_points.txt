@@ -1,0 +1,3 @@
+[console_scripts]
+crp-edge = content_platform.edge.main:run
+crp-server = content_platform.server.main:run

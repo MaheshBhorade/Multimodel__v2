@@ -1,0 +1,690 @@
+// Global Application State
+const state = {
+  activeTab: 'overview',
+  devices: [],
+  captures: [],
+  library: [],
+  unknowns: [],
+  pollingInterval: null,
+  isPolling: true
+};
+
+// Chart.js references
+let shareChart = null;
+let adChart = null;
+
+// DOM Elements
+const elements = {
+  navItems: document.querySelectorAll('.nav-item'),
+  tabPanes: document.querySelectorAll('.tab-pane'),
+  tabTitle: document.getElementById('current-tab-title'),
+  tabDesc: document.getElementById('current-tab-desc'),
+  
+  // Controls
+  autoRefresh: document.getElementById('auto-refresh'),
+  manualRefresh: document.getElementById('manual-refresh'),
+  toastContainer: document.getElementById('toast-container'),
+  reviewBadge: document.getElementById('review-badge'),
+  
+  // KPI Metrics
+  metricDevices: document.getElementById('metric-devices'),
+  metricCaptures: document.getElementById('metric-captures'),
+  metricReviews: document.getElementById('metric-reviews'),
+  metricRatio: document.getElementById('metric-ratio'),
+  
+  // Lists / Tables
+  capturesList: document.getElementById('captures-list'),
+  reviewList: document.getElementById('review-list'),
+  libraryList: document.getElementById('library-list'),
+  devicesList: document.getElementById('devices-list'),
+  
+  // Resolve Modal
+  resolveModal: document.getElementById('resolve-modal'),
+  closeResolveModal: document.getElementById('close-resolve-modal'),
+  resolveForm: document.getElementById('resolve-form'),
+  resolveCaptureId: document.getElementById('resolve-capture-id'),
+  resolveImg: document.getElementById('resolve-img'),
+  resolveOcr: document.getElementById('resolve-ocr'),
+  resolveAudio: document.getElementById('resolve-audio'),
+  
+  // Add Library Modal
+  addLibraryModal: document.getElementById('add-library-modal'),
+  btnOpenAddLib: document.getElementById('btn-add-library'),
+  closeAddModal: document.getElementById('close-add-modal'),
+  addLibraryForm: document.getElementById('add-library-form')
+};
+
+// Tab Descriptions
+const tabMeta = {
+  overview: { title: 'Dashboard Overview', desc: 'Monitor stream status and system metrics in real-time.' },
+  review: { title: 'Review Queue', desc: 'Analyze and resolve unrecognized content feeds captured by edge agents.' },
+  library: { title: 'Reference Content Library', desc: 'Manage fingerprint signatures and category tags for match optimization.' },
+  devices: { title: 'Connected Edge Devices', desc: 'Inspect status, locations, and throughput profiles of Raspberry Pi hardware.' },
+  analytics: { title: 'Analytics Reports', desc: 'Inspect aggregated system statistics, content categories, ad frequencies, and playback timelines.' }
+};
+
+// Initialize Application
+document.addEventListener('DOMContentLoaded', () => {
+  setupNavigation();
+  setupEventListeners();
+  startPolling();
+  fetchData();
+});
+
+// Setup Sidebar Tab Navigation
+function setupNavigation() {
+  elements.navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const tabId = item.getAttribute('data-tab');
+      
+      // Update sidebar state
+      elements.navItems.forEach(nav => nav.classList.remove('active'));
+      item.classList.add('active');
+      
+      // Update panel view
+      elements.tabPanes.forEach(pane => pane.classList.remove('active'));
+      const activePane = document.getElementById(`tab-${tabId}`);
+      if (activePane) activePane.classList.add('active');
+      
+      // Update Header Text
+      state.activeTab = tabId;
+      elements.tabTitle.textContent = tabMeta[tabId].title;
+      elements.tabDesc.textContent = tabMeta[tabId].desc;
+      
+      // Load specific view data immediately
+      fetchData();
+    });
+  });
+}
+
+// Setup Event Listeners for Modals and Controls
+function setupEventListeners() {
+  // Manual refresh button
+  elements.manualRefresh.addEventListener('click', () => {
+    showToast('Info', 'Fetching latest data...', 'info');
+    fetchData();
+  });
+
+  // Auto-refresh toggler
+  elements.autoRefresh.addEventListener('change', (e) => {
+    state.isPolling = e.target.checked;
+    if (state.isPolling) {
+      startPolling();
+      showToast('Live Sync Active', 'Auto-refresh resumed (5s interval)', 'info');
+    } else {
+      stopPolling();
+      showToast('Live Sync Paused', 'Manual refresh required', 'info');
+    }
+  });
+
+  // Resolve Modal closing
+  elements.closeResolveModal.addEventListener('click', hideResolveModal);
+  elements.resolveModal.addEventListener('click', (e) => {
+    if (e.target === elements.resolveModal) hideResolveModal();
+  });
+
+  // Resolve Modal Submit
+  elements.resolveForm.addEventListener('submit', handleResolveSubmit);
+
+  // Add Library Modal Open/Close
+  elements.btnOpenAddLib.addEventListener('click', showAddLibraryModal);
+  elements.closeAddModal.addEventListener('click', hideAddLibraryModal);
+  elements.addLibraryModal.addEventListener('click', (e) => {
+    if (e.target === elements.addLibraryModal) hideAddLibraryModal();
+  });
+
+  // Add Library Modal Submit
+  elements.addLibraryForm.addEventListener('submit', handleAddLibrarySubmit);
+}
+
+// Polling Timers
+function startPolling() {
+  stopPolling(); // Clear any existing
+  state.pollingInterval = setInterval(fetchData, 5000);
+}
+
+function stopPolling() {
+  if (state.pollingInterval) {
+    clearInterval(state.pollingInterval);
+    state.pollingInterval = null;
+  }
+}
+
+// Global API Data Fetcher
+async function fetchData() {
+  try {
+    const [devices, captures, library, unknowns] = await Promise.all([
+      fetch('/api/v1/devices').then(r => r.json()),
+      fetch('/api/v1/captures?limit=50').then(r => r.json()),
+      fetch('/api/v1/library').then(r => r.json()),
+      fetch('/api/v1/captures?only_unknown=true&limit=50').then(r => r.json())
+    ]);
+
+    state.devices = devices;
+    state.captures = captures.items;
+    state.library = library;
+    state.unknowns = unknowns.items;
+
+    updateKPIs();
+    renderActiveTab();
+  } catch (error) {
+    console.error('Error fetching dashboard data:', error);
+    showToast('Sync Error', 'Failed to connect to backend server.', 'danger');
+  }
+}
+
+// Update KPI Metric Cards
+function updateKPIs() {
+  const activeCount = state.devices.filter(d => d.status === 'active').length;
+  elements.metricDevices.textContent = activeCount;
+  elements.metricCaptures.textContent = state.captures.length > 0 ? state.captures[0].id : 0;
+  
+  const unknownCount = state.unknowns.length;
+  elements.metricReviews.textContent = unknownCount;
+  elements.reviewBadge.textContent = unknownCount;
+  elements.reviewBadge.style.display = unknownCount > 0 ? 'inline-block' : 'none';
+
+  if (state.captures.length > 0) {
+    const ratio = (state.captures.filter(c => c.result?.content_type === 'unknown').length / state.captures.length) * 100;
+    elements.metricRatio.textContent = `${ratio.toFixed(1)}%`;
+  } else {
+    elements.metricRatio.textContent = '0.0%';
+  }
+}
+
+// Render active tab contents
+function renderActiveTab() {
+  switch (state.activeTab) {
+    case 'overview':
+      renderOverview();
+      break;
+    case 'review':
+      renderReviewQueue();
+      break;
+    case 'library':
+      renderLibrary();
+      break;
+    case 'devices':
+      renderDevices();
+      break;
+    case 'analytics':
+      renderAnalytics();
+      break;
+  }
+}
+
+// Render: OVERVIEW (Real-Time Capture Log)
+function renderOverview() {
+  if (state.captures.length === 0) {
+    elements.capturesList.innerHTML = '<tr><td colspan="7" class="loading-state">No captures recorded yet. Run crp-edge agent.</td></tr>';
+    return;
+  }
+
+  // Display top 15 latest captures
+  const items = state.captures.slice(0, 15);
+  elements.capturesList.innerHTML = items.map(c => {
+    const date = new Date(c.captured_at).toLocaleTimeString();
+    
+    // Confidence indicator
+    let confClass = 'low';
+    const confidence = c.result ? c.result.confidence : 0;
+    if (confidence >= 0.8) confClass = 'high';
+    else if (confidence >= 0.55) confClass = 'medium';
+    
+    // Snapshot preview
+    const snapshotHtml = c.snapshot_url 
+      ? `<img src="${c.snapshot_url}" class="preview-thumbnail" alt="Thumb" onclick="openImageWindow('${c.snapshot_url}')">`
+      : `<span class="text-muted" style="font-size: 0.75rem;">None</span>`;
+
+    // Category / Tag
+    const category = c.result ? c.result.content_type : 'unknown';
+    const contentName = c.result ? c.result.content_name : 'Unknown Content';
+    
+    // Match breakdown
+    const breakdown = c.result ? c.result.breakdown : { visual_score: 0, audio_score: 0, ocr_score: 0, logo_score: 0 };
+    const breakdownText = `V: ${(breakdown.visual_score).toFixed(2)} | A: ${(breakdown.audio_score).toFixed(2)} | O: ${(breakdown.ocr_score).toFixed(2)} | L: ${(breakdown.logo_score).toFixed(2)}`;
+
+    return `
+      <tr>
+        <td style="font-weight: 500;">${date}</td>
+        <td style="font-family: monospace; color: #a78bfa;">${c.device_id}</td>
+        <td>${snapshotHtml}</td>
+        <td style="font-weight: 600;">${contentName}</td>
+        <td><span class="tag ${category}">${category}</span></td>
+        <td>
+          <div class="confidence-indicator">
+            <div class="confidence-bar-bg">
+              <div class="confidence-bar-fg ${confClass}" style="width: ${confidence * 100}%"></div>
+            </div>
+            <span class="confidence-text ${confClass}">${(confidence * 100).toFixed(0)}%</span>
+          </div>
+        </td>
+        <td style="font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">${breakdownText}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Render: REVIEW QUEUE
+function renderReviewQueue() {
+  if (state.unknowns.length === 0) {
+    elements.reviewList.innerHTML = `
+      <div class="loading-state" style="grid-column: 1 / -1; padding: 60px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="48" height="48" style="color: var(--color-success); margin-bottom: 16px; opacity: 0.8;">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        <h3 style="color: var(--text-primary); font-family: var(--font-heading); margin-bottom: 8px;">Review Queue Clear!</h3>
+        <p style="color: var(--text-muted); font-size: 0.85rem;">All edge device captures have been recognized successfully.</p>
+      </div>
+    `;
+    return;
+  }
+
+  elements.reviewList.innerHTML = state.unknowns.map(u => {
+    const timeStr = new Date(u.captured_at).toLocaleString();
+    const mediaHtml = u.snapshot_url
+      ? `<img src="${u.snapshot_url}" alt="Capture Preview">`
+      : `<div class="no-snapshot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          No Snapshot
+         </div>`;
+    
+    return `
+      <div class="review-card">
+        <div class="review-media">
+          ${mediaHtml}
+        </div>
+        <div class="review-content">
+          <div class="review-meta">
+            <span>ID: #${u.id}</span>
+            <span>${timeStr}</span>
+          </div>
+          <h4 style="margin-bottom: 8px; font-family: var(--font-heading);">Device: <span style="color: #c084fc;">${u.device_id}</span></h4>
+          <div class="ocr-box">${u.ocr_text || 'No text extracted via OCR.'}</div>
+          <div class="review-actions">
+            <button class="btn btn-primary btn-sm" onclick="openResolveModal(${u.id})">
+              Resolve Capture
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Render: REFERENCE LIBRARY
+function renderLibrary() {
+  if (state.library.length === 0) {
+    elements.libraryList.innerHTML = '<tr><td colspan="8" class="loading-state">Reference library is empty. Add signatures to begin matching.</td></tr>';
+    return;
+  }
+
+  elements.libraryList.innerHTML = state.library.map(item => {
+    const visualStr = item.visual_fp ? `[${item.visual_fp.slice(0, 4).map(v => v.toFixed(2)).join(', ')}]` : '[]';
+    const logoStr = item.logo_fp ? `[${item.logo_fp.slice(0, 4).map(v => v.toFixed(2)).join(', ')}]` : '[]';
+    
+    return `
+      <tr>
+        <td style="font-family: monospace; font-size: 0.75rem; color: var(--text-muted);">${item.external_content_id}</td>
+        <td style="font-weight: 600;">${item.title}</td>
+        <td><span class="tag ${item.category}">${item.category}</span></td>
+        <td>${item.channel_name || '<span class="text-muted">-</span>'}</td>
+        <td style="font-family: monospace; color: #60a5fa;">${item.audio_fp || '-'}</td>
+        <td style="font-size: 0.8rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.ocr_keywords || '-'}</td>
+        <td style="font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">
+          V: ${visualStr}<br>
+          L: ${logoStr}
+        </td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="deleteLibraryItem(${item.id})">Delete</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Render: CONNECTED DEVICES
+function renderDevices() {
+  if (state.devices.length === 0) {
+    elements.devicesList.innerHTML = '<tr><td colspan="5" class="loading-state">No connected devices detected.</td></tr>';
+    return;
+  }
+
+  elements.devicesList.innerHTML = state.devices.map(d => {
+    const statusClass = d.status === 'active' ? 'online' : 'offline';
+    const lastActiveStr = d.last_active ? new Date(d.last_active).toLocaleString() : 'Never';
+    return `
+      <tr>
+        <td style="font-family: monospace; font-weight: 600; color: #a78bfa;">${d.device_id}</td>
+        <td>
+          <div class="system-status" style="display: inline-flex; background: transparent; border: none; padding: 0;">
+            <span class="status-indicator ${statusClass}" style="background-color: ${d.status === 'active' ? 'var(--color-success)' : 'var(--text-muted)'}; box-shadow: ${d.status === 'active' ? '0 0 8px var(--color-success)' : 'none'};"></span>
+            <span class="status-text" style="color: ${d.status === 'active' ? 'var(--color-success)' : 'var(--text-muted)'}; text-transform: capitalize; margin-left: 8px;">${d.status}</span>
+          </div>
+        </td>
+        <td>${d.location || '<span class="text-muted">Not Set</span>'}</td>
+        <td style="font-weight: 500;">${d.capture_count}</td>
+        <td>${lastActiveStr}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Open Resolve Capture Modal
+function openResolveModal(captureId) {
+  const capture = state.unknowns.find(u => u.id === captureId);
+  if (!capture) return;
+
+  elements.resolveCaptureId.value = captureId;
+  elements.resolveImg.src = capture.snapshot_url || '';
+  elements.resolveImg.style.display = capture.snapshot_url ? 'block' : 'none';
+  elements.resolveOcr.textContent = capture.ocr_text || '(No OCR text extracted)';
+  elements.resolveAudio.textContent = capture.audio_fp || '(No Audio signature detected)';
+  
+  // Clear inputs
+  elements.resolveForm.reset();
+  
+  elements.resolveModal.classList.add('active');
+  stopPolling(); // Pause background polling
+}
+
+function hideResolveModal() {
+  elements.resolveModal.classList.remove('active');
+  if (state.isPolling) startPolling(); // Resume if enabled
+}
+
+// Handle Resolve Modal Submission
+async function handleResolveSubmit(e) {
+  e.preventDefault();
+  const captureId = elements.resolveCaptureId.value;
+  const title = document.getElementById('resolve-title').value;
+  const category = document.getElementById('resolve-category').value;
+  const channel = document.getElementById('resolve-channel').value;
+
+  try {
+    const response = await fetch(`/api/v1/captures/${captureId}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: title,
+        category: category,
+        channel_name: channel || null
+      })
+    });
+
+    if (response.ok) {
+      showToast('Capture Resolved', `"${title}" has been added to content library!`, 'success');
+      hideResolveModal();
+      fetchData(); // Trigger reload
+    } else {
+      showToast('Error', 'Failed to resolve capture.', 'danger');
+    }
+  } catch (error) {
+    console.error('Resolve submit error:', error);
+    showToast('Connection Error', 'Failed to resolve capture.', 'danger');
+  }
+}
+
+// Add Library Modal Controls
+function showAddLibraryModal() {
+  elements.addLibraryForm.reset();
+  elements.addLibraryModal.classList.add('active');
+  stopPolling();
+}
+
+function hideAddLibraryModal() {
+  elements.addLibraryModal.classList.remove('active');
+  if (state.isPolling) startPolling();
+}
+
+// Handle Add Library Modal Submission
+async function handleAddLibrarySubmit(e) {
+  e.preventDefault();
+  const title = document.getElementById('lib-title').value;
+  const category = document.getElementById('lib-category').value;
+  const channel = document.getElementById('lib-channel').value;
+  const audio = document.getElementById('lib-audio').value;
+  const ocr = document.getElementById('lib-ocr').value;
+  
+  const visualVal = document.getElementById('lib-visual').value.split(',').map(n => parseFloat(n.trim()));
+  const logoVal = document.getElementById('lib-logo').value.split(',').map(n => parseFloat(n.trim()));
+
+  if (visualVal.length !== 4 || visualVal.some(isNaN) || logoVal.length !== 4 || logoVal.some(isNaN)) {
+    showToast('Validation Error', 'Fingerprints must contain exactly 4 comma-separated float numbers.', 'danger');
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/v1/library', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        category,
+        channel_name: channel || null,
+        visual_fp: visualVal,
+        audio_fp: audio,
+        logo_fp: logoVal,
+        ocr_keywords: ocr
+      })
+    });
+
+    if (response.ok) {
+      showToast('Library Updated', `"${title}" reference signature saved.`, 'success');
+      hideAddLibraryModal();
+      fetchData();
+    } else {
+      showToast('Error', 'Failed to save signature.', 'danger');
+    }
+  } catch (error) {
+    console.error('Add library signature error:', error);
+    showToast('Connection Error', 'Server communication failure.', 'danger');
+  }
+}
+
+// Delete Library Signature
+async function deleteLibraryItem(itemId) {
+  if (!confirm('Are you sure you want to delete this reference content signature?')) return;
+
+  try {
+    const response = await fetch(`/api/v1/library/${itemId}`, {
+      method: 'DELETE'
+    });
+
+    if (response.ok) {
+      showToast('Signature Removed', 'The library entry has been deleted.', 'success');
+      fetchData();
+    } else {
+      showToast('Error', 'Failed to delete signature.', 'danger');
+    }
+  } catch (error) {
+    console.error('Delete signature error:', error);
+    showToast('Connection Error', 'Server communication failure.', 'danger');
+  }
+}
+
+// Helper: Open image in a new tab / viewport
+window.openImageWindow = function(url) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+};
+
+// Render: ANALYTICS (Charts & Timeline)
+async function renderAnalytics() {
+  try {
+    const [overview, share, ads, timeline] = await Promise.all([
+      fetch('/api/v1/analytics/overview').then(r => r.json()),
+      fetch('/api/v1/analytics/share').then(r => r.json()),
+      fetch('/api/v1/analytics/ad-frequency').then(r => r.json()),
+      fetch('/api/v1/analytics/timeline').then(r => r.json())
+    ]);
+
+    // Update charts
+    renderShareChart(share);
+    renderAdChart(ads);
+    renderTimeline(timeline);
+  } catch (error) {
+    console.error('Error rendering analytics tab:', error);
+    showToast('Analytics Error', 'Failed to retrieve charts data.', 'danger');
+  }
+}
+
+function renderShareChart(shareData) {
+  const canvas = document.getElementById('share-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (shareChart) shareChart.destroy();
+
+  const categories = Object.keys(shareData);
+  const counts = Object.values(shareData);
+  
+  if (categories.length === 0) {
+    ctx.font = '14px Plus Jakarta Sans';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'center';
+    ctx.fillText('No category data available', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+
+  const bgColors = categories.map(cat => {
+    switch (cat.toLowerCase()) {
+      case 'channel': return '#8b5cf6';
+      case 'movie': return '#3b82f6';
+      case 'advertisement': return '#f97316';
+      case 'series': case 'episode': return '#ec4899';
+      case 'ott': return '#06b6d4';
+      default: return '#ef4444';
+    }
+  });
+
+  shareChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: categories.map(c => c.toUpperCase()),
+      datasets: [{
+        data: counts,
+        backgroundColor: bgColors,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#94a3b8',
+            font: { family: 'Plus Jakarta Sans', size: 10 }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderAdChart(adData) {
+  const canvas = document.getElementById('ad-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (adChart) adChart.destroy();
+
+  if (adData.length === 0) {
+    ctx.font = '14px Plus Jakarta Sans';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'center';
+    ctx.fillText('No advertisement data available', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+
+  const adNames = adData.map(ad => ad.name);
+  const adCounts = adData.map(ad => ad.count);
+
+  adChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: adNames,
+      datasets: [{
+        label: 'Detections',
+        data: adCounts,
+        backgroundColor: 'rgba(139, 92, 246, 0.4)',
+        borderColor: '#8b5cf6',
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#94a3b8', font: { family: 'Plus Jakarta Sans', size: 10 } },
+          grid: { color: 'rgba(255, 255, 255, 0.05)' }
+        },
+        y: {
+          ticks: { color: '#94a3b8', font: { family: 'Plus Jakarta Sans', size: 10 } },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+}
+
+function renderTimeline(items) {
+  const container = document.getElementById('analytics-timeline');
+  if (!container) return;
+
+  if (!items || items.length === 0) {
+    container.innerHTML = '<div class="loading-state">No playback history recorded yet.</div>';
+    return;
+  }
+
+  let html = `<div class="timeline-container" style="display: flex; flex-direction: column; gap: 16px; position: relative; padding-left: 24px; border-left: 2px solid var(--border-glass); margin-left: 10px;">`;
+
+  items.forEach(item => {
+    const timeStr = new Date(item.timestamp).toLocaleString();
+    html += `
+      <div class="timeline-item" style="position: relative;">
+        <div class="timeline-dot" style="position: absolute; left: -31px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--color-primary); border: 2px solid var(--bg-secondary); box-shadow: 0 0 6px var(--color-primary);"></div>
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); padding: 12px 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <span style="font-weight: 600; font-size: 0.95rem; color: var(--text-primary);">${item.content_name}</span>
+            <span class="tag ${item.category}" style="margin-left: 10px;">${item.category}</span>
+          </div>
+          <div style="text-align: right;">
+            <span style="font-size: 0.8rem; color: var(--text-secondary);">${timeStr}</span>
+            <span style="display: block; font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">Device: ${item.device_id}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+
+// UI Notification Toasts Creator
+function showToast(title, message, type = 'info') {
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `
+    <div class="toast-title">${title}</div>
+    <div class="toast-message">${message}</div>
+  `;
+  
+  elements.toastContainer.appendChild(toast);
+  
+  // Animate slide-out and remove
+  setTimeout(() => {
+    toast.style.transform = 'translateX(120%)';
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}

@@ -1,0 +1,12 @@
+.venv/
+.ruff_cache/
+.pytest_cache/
+.env
+videos/
+runtime/snapshots/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.zip
+.zip    
+*.db

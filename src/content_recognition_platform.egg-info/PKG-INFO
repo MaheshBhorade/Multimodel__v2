@@ -1,0 +1,136 @@
+Metadata-Version: 2.4
+Name: content-recognition-platform
+Version: 0.1.0
+Summary: Distributed TV and OTT content recognition platform for Raspberry Pi edge devices.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn>=0.30.0
+Requires-Dist: pydantic>=2.8.0
+Requires-Dist: pydantic-settings>=2.3.0
+Requires-Dist: sqlalchemy>=2.0.31
+Requires-Dist: psycopg[binary]>=3.2.1
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: numpy>=1.26.4
+Requires-Dist: paramiko>=3.4.0
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: qdrant-client>=1.9.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.2.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23.8; extra == "dev"
+Requires-Dist: ruff>=0.5.0; extra == "dev"
+Provides-Extra: pi
+Requires-Dist: opencv-python>=4.10.0.84; extra == "pi"
+Requires-Dist: pytesseract>=0.3.13; extra == "pi"
+Requires-Dist: Pillow>=10.4.0; extra == "pi"
+
+# AI-Powered TV & OTT Content Recognition Platform
+
+This repository is the MVP foundation for a distributed content recognition system that runs lightweight capture and fingerprinting on Raspberry Pi devices and performs matching centrally.
+
+## What is included
+
+- A FastAPI ingestion and recognition server
+- A Raspberry Pi edge agent skeleton with a 10-second capture loop
+- Shared schemas for device payloads and recognition results
+- A baseline multi-signal matching engine
+- Local development config with PostgreSQL and Qdrant placeholders
+
+## Architecture
+
+```text
+Set Top Box / HDMI Feed
+        |
+        v
+ Raspberry Pi Edge Agent
+        |
+        v
+ Fingerprint Package API
+        |
+        v
+  Recognition Server
+        |
+        +--> PostgreSQL (metadata, captures, results)
+        |
+        +--> Vector Store Adapter (Qdrant-ready)
+        |
+        +--> Matching Engine
+        |
+        v
+ Dashboard / Analytics
+```
+
+## Repository layout
+
+```text
+src/content_platform/
+  edge/         Raspberry Pi capture and fingerprint workflow
+  server/       FastAPI ingestion, persistence, and matching
+  shared/       Pydantic schemas and settings
+tests/          Matching and API tests
+```
+
+## Quick start
+
+1. Create a virtual environment and install dependencies:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e .[dev]
+```
+
+2. Start the API server:
+
+```powershell
+crp-server
+```
+
+3. In another terminal, run the simulated edge device:
+
+```powershell
+$env:CRP_DEVICE_ID="PI001"
+crp-edge
+```
+
+4. Run tests:
+
+```powershell
+pytest
+```
+
+## Current MVP boundaries
+
+- The edge agent currently simulates capture and lightweight feature extraction.
+- The matching engine uses weighted similarity across visual, audio, OCR, and logo signals.
+- The content library is stored in SQL for now, with clear adapter points for Qdrant and dedicated model services.
+
+## Raspberry Pi integration
+
+The repo now includes a first-pass real Pi capture mode that reuses the proven hardware discovery approach from your earlier project:
+
+- video device discovery via `v4l2-ctl --list-devices`
+- ALSA USB audio card discovery via `/proc/asound/cards`
+- OCR extraction via Tesseract on the Pi
+- snapshot upload and local static serving on the server
+- edge mode switch with `CRP_EDGE_MODE=pi`
+
+Deploy script:
+
+```powershell
+.venv\Scripts\python .\scripts\pi_deploy.py `
+  --host 100.85.114.118 `
+  --user indi `
+  --password "<pi-password>" `
+  --device-id PI_OFFICE_01 `
+  --server-url http://<your-server-ip>:8000
+```
+
+This creates a `crp-edge.service` systemd unit on the Pi and points it at this project.
+
+## Next build steps
+
+1. Replace simulated extractors with real HDMI capture, OCR, audio fingerprinting, and logo detection.
+2. Add Qdrant-backed vector search for visual, face, and logo embeddings.
+3. Add a review queue and admin dashboard for unknown content.
+4. Split services into API, processing workers, and background ingestion jobs for 1000+ device scale.
