@@ -1,9 +1,32 @@
 import json
 from dataclasses import dataclass
+import numpy as np
+from pathlib import Path
+from content_platform.server.faiss_index import FAISSIndex
 
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+# FAISS index configuration
+FAISS_VISUAL_DIM = 960
+FAISS_AUDIO_DIM = 13
+FAISS_INDEX_DIR = Path("runtime/faiss")
+FAISS_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+VISUAL_INDEX_PATH = FAISS_INDEX_DIR / "visual.index"
+VISUAL_META_PATH = FAISS_INDEX_DIR / "visual_meta.json"
+AUDIO_INDEX_PATH = FAISS_INDEX_DIR / "audio.index"
+AUDIO_META_PATH = FAISS_INDEX_DIR / "audio_meta.json"
+
+if VISUAL_INDEX_PATH.exists() and VISUAL_META_PATH.exists():
+    visual_index = FAISSIndex.load(str(VISUAL_INDEX_PATH), str(VISUAL_META_PATH), dim=FAISS_VISUAL_DIM, gpu=True)
+else:
+    visual_index = None
+
+if AUDIO_INDEX_PATH.exists() and AUDIO_META_PATH.exists():
+    audio_index = FAISSIndex.load(str(AUDIO_INDEX_PATH), str(AUDIO_META_PATH), dim=FAISS_AUDIO_DIM, gpu=True)
+else:
+    audio_index = None
 
 from content_platform.server.models import ContentLibrary
 from content_platform.shared.models import FingerprintPayload, MatchBreakdown, RecognitionResult
@@ -22,15 +45,18 @@ class WeightedScores:
 
 
 def cosine_like_similarity(left: list[float], right: list[float]) -> float:
-    """Cosine similarity for high-dimensional vectors (e.g., 256-dim visual FP) excluding DC bias."""
+    """Cosine similarity for high-dimensional vectors, with DCT-specific DC exclusion if needed."""
     if not left or not right or len(left) != len(right):
         return 0.0
     
-    # Exclude index 0 (the DC component of DCT) to prevent brightness bias and high cross-song similarity.
-    # For 1-dimensional inputs, fall back to matching the single element directly.
-    if len(left) > 1:
+    # For legacy 256-dim DCT vectors, exclude index 0 (the DC component) to prevent brightness bias.
+    # For deep learning feature embeddings (e.g., 960-dim), use the full vector.
+    if len(left) == 256:
         left_arr = np.array(left[1:])
         right_arr = np.array(right[1:])
+    elif len(left) > 1:
+        left_arr = np.array(left)
+        right_arr = np.array(right)
     else:
         left_arr = np.array(left)
         right_arr = np.array(right)
@@ -74,7 +100,9 @@ def audio_similarity(left: list[float] | str, right: list[float] | str) -> float
                         return max(0.0, min(1.0, np.dot(left_arr, right_arr) / (norm_left * norm_right)))
         except Exception:
             pass
-        return 0.35 if left.split("-")[0] == right.split("-")[0] else 0.0
+        if isinstance(left, str) and isinstance(right, str):
+            return 0.35 if left.split("-")[0] == right.split("-")[0] else 0.0
+        return 0.0
 
     left_arr = np.array(left)
     right_arr = np.array(right)
@@ -101,6 +129,9 @@ def ocr_similarity(left: str, right: str) -> float:
 
 def is_blank_signal(visual_fp: list[float]) -> bool:
     if not visual_fp:
+        return True
+    # All zeros (deep learning blank fallback)
+    if all(abs(x) < 1e-10 for x in visual_fp):
         return True
     # A solid color frame (like green screen or black screen) has only the DC component (index 0) non-zero.
     # We check if all AC components (indices 1 to end) are zero or extremely close to it.
@@ -142,54 +173,96 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
     # Check if audio is unavailable (all zeros = recording failed on Pi)
     audio_missing = _is_audio_unavailable(payload.audio_fp)
 
+    # Use FAISS indexes when available; otherwise fallback to brute‑force.
     matches = []
-
-    for content in contents:
-        # Load library vectors
-        try:
-            lib_visual = json.loads(content.visual_fp)
-        except Exception:
-            lib_visual = []
+    if visual_index is not None and audio_index is not None and not is_payload_blank and not audio_missing:
+        # Prepare query vectors
+        if isinstance(payload.visual_fps[0], list):
+            avg_visual = np.mean(np.array(payload.visual_fps, dtype=np.float32), axis=0)
+        else:
+            avg_visual = np.array(payload.visual_fps, dtype=np.float32)
+        audio_vec = np.array(payload.audio_fp, dtype=np.float32)
+        # Search indexes (k=10)
+        visual_results = visual_index.search(avg_visual, k=10)
+        audio_results = audio_index.search(audio_vec, k=10)
+        visual_scores = {cid: 1/(1+dist) for cid, dist in visual_results}
+        audio_scores = {cid: 1/(1+dist) for cid, dist in audio_results}
+        # Combine scores per content
+        all_cids = set(visual_scores.keys()) | set(audio_scores.keys())
+        for cid in all_cids:
+            vis_sim = visual_scores.get(cid, 0.0)
+            aud_sim = audio_scores.get(cid, 0.0)
+            # Adaptive scoring same as original logic
+            if is_payload_blank and not audio_missing:
+                combined_score = aud_sim
+            elif is_payload_blank and audio_missing:
+                combined_score = 0.0
+            elif audio_missing:
+                combined_score = vis_sim
+            else:
+                if vis_sim >= 0.75:
+                    combined_score = vis_sim
+                elif vis_sim >= 0.60 and aud_sim >= 0.10:
+                    combined_score = max(vis_sim, (vis_sim * 0.70) + (aud_sim * 0.30))
+                else:
+                    combined_score = (vis_sim * 0.70) + (aud_sim * 0.30)
+            # Retrieve content object from DB
+            content_obj = db.execute(select(ContentLibrary).where(ContentLibrary.external_content_id == cid)).scalar_one_or_none()
+            if content_obj:
+                matches.append({
+                    "content": content_obj,
+                    "score": combined_score,
+                    "visual_score": vis_sim,
+                    "audio_score": aud_sim,
+                })
+    else:
+        # Fallback to original brute‑force method
+        for content in contents:
+            # Load library vectors
+            try:
+                lib_visual = json.loads(content.visual_fp)
+            except Exception:
+                lib_visual = []
             
-        try:
-            lib_audio = json.loads(content.audio_fp)
-        except Exception:
-            lib_audio = content.audio_fp  # String fallback
+            try:
+                lib_audio = json.loads(content.audio_fp)
+            except Exception:
+                lib_audio = content.audio_fp  # String fallback
 
-        # Visual: compute similarity of each frame in payload against the library frame, taking the max
-        if payload.visual_fps and isinstance(payload.visual_fps[0], (int, float)):
-            # Fallback if payload.visual_fps is flat list[float]
-            vis_sim = cosine_like_similarity(payload.visual_fps, lib_visual)
-        else:
-            similarities = [
-                cosine_like_similarity(fp, lib_visual)
-                for fp in payload.visual_fps
-            ]
-            vis_sim = max(similarities) if similarities else 0.0
+            # Visual similarity
+            if payload.visual_fps and isinstance(payload.visual_fps[0], (int, float)):
+                vis_sim = cosine_like_similarity(payload.visual_fps, lib_visual)
+            else:
+                similarities = [
+                    cosine_like_similarity(fp, lib_visual)
+                    for fp in payload.visual_fps
+                ]
+                vis_sim = max(similarities) if similarities else 0.0
 
-        # Audio similarity
-        aud_sim = audio_similarity(payload.audio_fp, lib_audio)
+            # Audio similarity
+            aud_sim = audio_similarity(payload.audio_fp, lib_audio)
 
-        # Adaptive scoring based on available modalities:
-        #   - Both available:    70% visual + 30% audio  (full multimodal)
-        #   - Audio missing:     100% visual             (visual-only fallback)
-        #   - Video blank:       100% audio              (audio-only fallback)
-        #   - Both unavailable:  0.0                     (cannot match)
-        if is_payload_blank and not audio_missing:
-            combined_score = aud_sim
-        elif is_payload_blank and audio_missing:
-            combined_score = 0.0
-        elif audio_missing:
-            combined_score = vis_sim  # Visual-only fallback
-        else:
-            combined_score = (vis_sim * 0.70) + (aud_sim * 0.30)
+            # Adaptive scoring
+            if is_payload_blank and not audio_missing:
+                combined_score = aud_sim
+            elif is_payload_blank and audio_missing:
+                combined_score = 0.0
+            elif audio_missing:
+                combined_score = vis_sim
+            else:
+                if vis_sim >= 0.75:
+                    combined_score = vis_sim
+                elif vis_sim >= 0.60 and aud_sim >= 0.10:
+                    combined_score = max(vis_sim, (vis_sim * 0.70) + (aud_sim * 0.30))
+                else:
+                    combined_score = (vis_sim * 0.70) + (aud_sim * 0.30)
 
-        matches.append({
-            "content": content,
-            "score": combined_score,
-            "visual_score": vis_sim,
-            "audio_score": aud_sim,
-        })
+            matches.append({
+                "content": content,
+                "score": combined_score,
+                "visual_score": vis_sim,
+                "audio_score": aud_sim,
+            })
 
     # Sort matches by score descending
     matches.sort(key=lambda x: x["score"], reverse=True)

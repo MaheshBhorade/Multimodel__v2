@@ -42,7 +42,7 @@ def run(ssh: paramiko.SSHClient, command: str) -> str:
 
 def upload_tree(sftp: paramiko.SFTPClient, local_root: Path, remote_root: str) -> None:
     for root, dirs, files in os.walk(local_root):
-        dirs[:] = [d for d in dirs if d not in {".git", ".venv", "__pycache__", ".pytest_cache", "manual_ingestion"}]
+        dirs[:] = [d for d in dirs if d not in {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache", "manual_ingestion", "docs", "tests", "videos"}]
         relative = Path(root).relative_to(local_root)
         remote_dir = posixpath.join(remote_root, relative.as_posix()).rstrip("/")
         if remote_dir:
@@ -51,7 +51,9 @@ def upload_tree(sftp: paramiko.SFTPClient, local_root: Path, remote_root: str) -
             except OSError:
                 pass
         for file_name in files:
-            if file_name.endswith((".pyc", ".db", ".mp4", ".mkv", ".wav")):
+            ignored_endings = (".pyc", ".db", ".mp4", ".mkv", ".wav", ".zip", ".xlsx", ".png", ".jpg", ".jpeg")
+            ignored_names = {"verify_implementation.py", "check.py", "PROJECT_STRUCTURE.json", "docker-compose.yml", "clip_vit_b32_vision.onnx"}
+            if file_name.endswith(ignored_endings) or file_name in ignored_names:
                 continue
             local_path = Path(root) / file_name
             remote_path = posixpath.join(remote_dir, file_name)
@@ -93,12 +95,13 @@ def main() -> None:
                 f"CRP_DEVICE_ID={args.device_id}",
                 "CRP_EDGE_MODE=pi",
                 "CRP_CAPTURE_INTERVAL_SECONDS=10",
+                "CRP_AUDIO_DEVICE=default",
             ]
         )
         write_remote_file(sftp, posixpath.join(args.remote_root, ".env"), env_content)
 
         run(ssh, "sudo apt-get update")
-        run(ssh, "sudo apt-get install -y tesseract-ocr")
+        run(ssh, "sudo apt-get install -y tesseract-ocr libsndfile1")
         run(ssh, f"cd {args.remote_root} && python3 -m venv .venv")
         run(ssh, f"cd {args.remote_root} && . .venv/bin/activate && python -m pip install --upgrade pip")
         run(ssh, f"cd {args.remote_root} && . .venv/bin/activate && python -m pip install -e '.[pi]'")
@@ -111,10 +114,11 @@ After=network.target tailscale.service
 Type=simple
 User={args.user}
 WorkingDirectory={args.remote_root}
+EnvironmentFile={posixpath.join(args.remote_root, '.env')}
 ExecStart={args.remote_root}/.venv/bin/crp-edge
 Restart=always
 RestartSec=5
-Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONUNBUFFERED=1 XDG_RUNTIME_DIR=/run/user/1000
 
 [Install]
 WantedBy=multi-user.target

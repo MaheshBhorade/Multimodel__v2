@@ -6,6 +6,10 @@ from pathlib import Path
 
 
 def discover_audio_device() -> str:
+    env_device = os.environ.get("CRP_AUDIO_DEVICE")
+    if env_device:
+        return env_device
+
     cards_path = Path("/proc/asound/cards")
     if not cards_path.exists():
         return "default"

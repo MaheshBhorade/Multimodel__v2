@@ -157,7 +157,7 @@ def list_devices(db: Session = Depends(get_db)):
             "status": r.status,
             "location": r.location,
             "capture_count": r.capture_count,
-            "last_active": r.last_active.isoformat() if r.last_active else None,
+            "last_active": (r.last_active.isoformat() + "Z") if r.last_active else None,
         }
         for r in results
     ]
@@ -193,7 +193,7 @@ def list_captures(
             {
                 "id": c.id,
                 "device_id": c.device.device_id if c.device else "Unknown",
-                "captured_at": c.captured_at.isoformat(),
+                "captured_at": c.captured_at.isoformat() + "Z",
                 "snapshot_url": c.snapshot_url,
                 "ocr_text": c.ocr_text,
                 "audio_fp": json.loads(c.audio_fp) if c.audio_fp else [],
@@ -422,7 +422,7 @@ def get_analytics_timeline(db: Session = Depends(get_db)):
     )
     return [
         {
-            "timestamp": c.captured_at.isoformat(),
+            "timestamp": c.captured_at.isoformat() + "Z",
             "content_name": c.result.content_name,
             "category": c.result.content_type,
             "device_id": c.device.device_id if c.device else "Unknown",

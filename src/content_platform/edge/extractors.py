@@ -36,6 +36,36 @@ class FingerprintExtractor:
         self._buffer_frames = []
         self._buffer_audio = []
         self._batch_start_time = None
+        self._audio_process = None
+        self._audio_file = None
+        # Simulated database cache
+        self._simulated_segments = {}
+        self._db_loaded = False
+
+    def _load_simulated_segments(self) -> None:
+        if self._db_loaded:
+            return
+        try:
+            from content_platform.server.db import SessionLocal
+            from content_platform.server.models import ContentLibrary
+            import json
+
+            with SessionLocal() as db:
+                items = db.query(ContentLibrary).all()
+                for item in items:
+                    title = item.title.lower()
+                    if title not in self._simulated_segments:
+                        self._simulated_segments[title] = []
+                    try:
+                        vis = json.loads(item.visual_fp)
+                        aud = json.loads(item.audio_fp)
+                        self._simulated_segments[title].append((vis, aud))
+                    except Exception:
+                        pass
+            logger.info("Loaded simulated segments from DB: %s", {k: len(v) for k, v in self._simulated_segments.items()})
+            self._db_loaded = True
+        except Exception as e:
+            logger.warning("Could not load simulated segments from DB: %s. Using fallbacks.", e)
 
     def capture(self, device_id: str) -> EdgeCapture | None:
         """
@@ -56,25 +86,30 @@ class FingerprintExtractor:
         
         # Every 10 seconds, switch between 2 songs
         idx = (int(now.timestamp()) // 10) % 2
-        
-        # Song 1 vs Song 2
-        if idx == 0:
-            # Song 1 (Bangles)
-            visual_fp = [0.88, 0.23, 0.61, 0.79, 0.15, 0.34, 0.92, 0.41] + [0.0] * 248  # 256 dims
-            audio_fp_raw = [82, 71, 68, 65, 64, 63, 62, 61, 60, 59, 58, 57, 56]  # 13 MFCC
-        else:
-            # Song 2 (Shararat)
-            visual_fp = [0.45, 0.67, 0.23, 0.89, 0.12, 0.76, 0.33, 0.54] + [0.0] * 248  # 256 dims
-            audio_fp_raw = [75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15]  # 13 MFCC
+        song_name = "bangles" if idx == 0 else "shararat"
 
-        audio_fp_arr = np.array(audio_fp_raw, dtype=float)
-        norm = np.linalg.norm(audio_fp_arr)
-        audio_fp = (audio_fp_arr / (norm if norm > 1e-10 else 1.0)).tolist()
+        self._load_simulated_segments()
+        
+        segments = self._simulated_segments.get(song_name, [])
+        if segments:
+            # Replicate playback behavior: cycle sequentially through reference segments
+            seg_idx = (int(now.timestamp()) // 10) % len(segments)
+            visual_fp, audio_fp = segments[seg_idx]
+            visual_fps = [visual_fp] * 10
+        else:
+            # Fallback to dummy vectors of correct shapes
+            if idx == 0:
+                visual_fp = [0.88, 0.23, 0.61, 0.79, 0.15, 0.34, 0.92, 0.41] + [0.0] * 248
+                audio_fp = [0.88, 0.23, 0.61, 0.79, 0.15, 0.34, 0.92, 0.41, 0.12, 0.44, 0.33, 0.11, 0.05] + [0.0] * 117
+            else:
+                visual_fp = [0.45, 0.67, 0.23, 0.89, 0.12, 0.76, 0.33, 0.54] + [0.0] * 248
+                audio_fp = [0.45, 0.67, 0.23, 0.89, 0.12, 0.76, 0.33, 0.54, 0.05, 0.22, 0.11, 0.05, 0.02] + [0.0] * 117
+            visual_fps = [visual_fp] * 10
         
         payload = FingerprintPayload(
             device_id=device_id,
             timestamp=now,
-            visual_fps=[visual_fp] * 10,
+            visual_fps=visual_fps,
             audio_fp=audio_fp,
             snapshot_url=None,
             batch_count=10,
@@ -92,36 +127,106 @@ class FingerprintExtractor:
             import cv2
             from content_platform.fingerprint.unified import UnifiedFingerprinter
             
+            # Start background recording on first frame of the batch
+            if self._batch_start_time is None or len(self._buffer_frames) == 0:
+                self._batch_start_time = datetime.now(UTC)
+                if self._audio_process:
+                    try:
+                        self._audio_process.kill()
+                        self._audio_process.wait()
+                    except Exception:
+                        pass
+                if self._audio_file and os.path.exists(self._audio_file):
+                    try:
+                        os.remove(self._audio_file)
+                    except OSError:
+                        pass
+                
+                import tempfile
+                import shutil
+                self._audio_file = tempfile.mktemp(suffix=".wav")
+                use_parecord = shutil.which("parecord") is not None
+                
+                # Prefer ffmpeg with PulseAudio (PipeWire) for robust capture
+                if shutil.which("ffmpeg") is not None:
+                    # ffmpeg will handle resampling and format conversion
+                    cmd = [
+                        "ffmpeg",
+                        "-y",  # overwrite output if exists
+                        "-f", "pulse",
+                        "-i", "default",
+                        "-t", "10",
+                        "-ac", "1",
+                        "-ar", "16000",
+                        "-acodec", "pcm_s16le",
+                        self._audio_file,
+                    ]
+                    log_msg = f"Started background audio capture using ffmpeg to {self._audio_file}"
+                elif use_parecord:
+                    cmd = [
+                        "parecord", "--format=s16le", "--rate=16000", "--channels=1",
+                        "--file-format=wav", self._audio_file
+                    ]
+                    log_msg = f"Started background audio capture using parecord to {self._audio_file}"
+                else:
+                    audio_dev = discover_audio_device()
+                    cmd = [
+                        "arecord", "-D", audio_dev, "-d", "10",
+                        "-f", "S16_LE", "-r", "16000", "-c", "1", self._audio_file
+                    ]
+                    log_msg = f"Started background audio capture using {audio_dev} (arecord) to {self._audio_file}"
+
+                try:
+                    self._audio_process = subprocess.Popen(
+                        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+                    logger.info(log_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to start background audio capture: {e}")
+                    self._audio_process = None
+
             # Capture frame
             frame = self._capture_frame()
             self._buffer_frames.append(frame)
-            
-            # Record short audio snippet (1 sec)
-            try:
-                audio_dev = discover_audio_device()
-                audio_bytes = self._record_audio_snippet(audio_dev, duration=1)
-                if audio_bytes:
-                    self._buffer_audio.append(audio_bytes)
-            except Exception as e:
-                logger.warning(f"Audio recording failed: {e}")
-            
-            # Initialize batch timer on first capture
-            if self._batch_start_time is None:
-                self._batch_start_time = datetime.now(UTC)
             
             # Check if we have 10 seconds of data
             elapsed = (datetime.now(UTC) - self._batch_start_time).total_seconds()
             
             if elapsed >= 10 or len(self._buffer_frames) >= 10:
+                # Wait for audio process to complete
+                audio_bytes = b""
+                if self._audio_process:
+                    try:
+                        # Cleanly terminate parecord if it's still running
+                        if self._audio_process.poll() is None:
+                            self._audio_process.terminate()
+                        self._audio_process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        logger.warning("Background audio capture did not terminate. Killing process.")
+                        self._audio_process.kill()
+                        self._audio_process.wait()
+                    except Exception as e:
+                        logger.warning(f"Error waiting for audio process: {e}")
+                    
+                    if self._audio_file and os.path.exists(self._audio_file):
+                        try:
+                            with open(self._audio_file, "rb") as f:
+                                audio_bytes = f.read()
+                            os.remove(self._audio_file)
+                        except Exception as e:
+                            logger.warning(f"Failed to read batch audio file: {e}")
+                    
+                    self._audio_process = None
+                    self._audio_file = None
+                
                 # Process batch
-                payload = self._process_batch_pi(device_id)
+                payload = self._process_batch_pi(device_id, audio_bytes)
+                
+                logger.info(f"Batch processed: {len(self._buffer_frames)} frames, audio_len={len(audio_bytes)} bytes")
                 
                 # Reset buffer
                 self._buffer_frames = []
-                self._buffer_audio = []
                 self._batch_start_time = None
-                
-                logger.info(f"Batch processed: {len(self._buffer_frames)} frames, {len(self._buffer_audio)} audio snippets")
                 
                 return payload
             
@@ -129,27 +234,41 @@ class FingerprintExtractor:
         
         except Exception as e:
             logger.error(f"Pi capture error: {e}")
+            if self._audio_process:
+                try:
+                    self._audio_process.kill()
+                    self._audio_process.wait()
+                except Exception:
+                    pass
+            if self._audio_file and os.path.exists(self._audio_file):
+                try:
+                    os.remove(self._audio_file)
+                except OSError:
+                    pass
+            self._audio_process = None
+            self._audio_file = None
             self._buffer_frames = []
-            self._buffer_audio = []
             self._batch_start_time = None
             return None
 
-    def _process_batch_pi(self, device_id: str) -> EdgeCapture:
+    def _process_batch_pi(self, device_id: str, audio_bytes: bytes) -> EdgeCapture:
         """Process buffered frames/audio and return single payload."""
         import cv2
         from content_platform.fingerprint.unified import UnifiedFingerprinter
+        from content_platform.fingerprint.embeddings import DeepEmbeddingsExtractor
         
         logger.info(f"Processing batch: {len(self._buffer_frames)} frames")
         
         # Visual: extract fingerprint for each frame
-        visual_fps = [UnifiedFingerprinter.visual_fingerprint(f) for f in self._buffer_frames]
+        visual_fps = [DeepEmbeddingsExtractor.extract_visual(f) for f in self._buffer_frames]
         
-        # Audio: decode all WAV bytes chunks and extract MFCC
-        audio_arrays = [wav_bytes_to_ndarray(b) for b in self._buffer_audio]
-        audio_arrays = [arr for arr in audio_arrays if len(arr) > 0]
-        if audio_arrays:
-            concatenated = np.concatenate(audio_arrays)
-            audio_fp = UnifiedFingerprinter.audio_fingerprint(concatenated, sr=16000)
+        # Audio: decode WAV bytes and extract MFCC
+        if audio_bytes and len(audio_bytes) >= 44:
+            arr = wav_bytes_to_ndarray(audio_bytes)
+            if len(arr) > 0:
+                audio_fp = UnifiedFingerprinter.audio_fingerprint(arr, sr=16000)
+            else:
+                audio_fp = [0.0] * 130
         else:
             audio_fp = [0.0] * 130
             
@@ -186,7 +305,7 @@ class FingerprintExtractor:
             ]
             subprocess.run(
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=duration + 2, check=True
+                timeout=duration + 5, check=True
             )
             if os.path.exists(temp_wav):
                 with open(temp_wav, "rb") as f:

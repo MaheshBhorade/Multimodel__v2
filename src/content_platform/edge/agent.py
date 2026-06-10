@@ -20,7 +20,7 @@ class EdgeAgent:
         while True:
             capture = self.extractor.capture(self.device_id)
             if capture is None:
-                time.sleep(self.interval)
+                time.sleep(1)
                 continue
 
             if capture.snapshot_bytes and capture.snapshot_filename:
@@ -40,4 +40,4 @@ class EdgeAgent:
                 result.result.content_type,
                 result.result.confidence,
             )
-            time.sleep(self.interval)
+            time.sleep(1)
