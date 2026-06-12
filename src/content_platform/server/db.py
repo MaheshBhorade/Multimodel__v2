@@ -84,3 +84,44 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+platform_connect_args = {"check_same_thread": False, "timeout": 30.0} if settings.platform_database_url.startswith("sqlite") else {}
+
+if settings.platform_database_url.startswith("sqlite"):
+    platform_poolclass = StaticPool if ":memory:" in settings.platform_database_url else NullPool
+    platform_engine = create_engine(
+        settings.platform_database_url,
+        future=True,
+        connect_args=platform_connect_args,
+        poolclass=platform_poolclass
+    )
+    
+    @event.listens_for(platform_engine, "connect")
+    def set_platform_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        except Exception:
+            pass
+        finally:
+            cursor.close()
+else:
+    platform_engine = create_engine(
+        settings.platform_database_url,
+        future=True,
+        pool_size=20,
+        max_overflow=50
+    )
+
+PlatformSessionLocal = sessionmaker(bind=platform_engine, autoflush=False, autocommit=False, future=True)
+PlatformBase = declarative_base()
+
+
+def get_platform_db() -> Generator[Session, None, None]:
+    db = PlatformSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

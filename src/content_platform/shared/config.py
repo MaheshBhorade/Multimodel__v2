@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="CRP_", extra="ignore")
 
     database_url: str = Field(default="sqlite:///./content_platform.db")
+    platform_database_url: str = Field(default="sqlite:///./platform_library.db")
     server_host: str = Field(default="0.0.0.0")
     server_port: int = Field(default=8000)
     edge_server_url: str = Field(default="http://127.0.0.1:8000")

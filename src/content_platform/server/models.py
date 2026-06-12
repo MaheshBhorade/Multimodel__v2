@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from content_platform.server.db import Base
+from content_platform.server.db import Base, PlatformBase
 
 
 class Device(Base):
@@ -139,6 +139,7 @@ class RecognitionResultRecord(Base):
     audio_score: Mapped[float] = mapped_column(Float)
     ocr_score: Mapped[float] = mapped_column(Float)
     logo_score: Mapped[float] = mapped_column(Float)
+    matched_platform: Mapped[str] = mapped_column(String(64), default="unknown", server_default="unknown")
 
     capture: Mapped["Capture"] = relationship(
         back_populates="result"
@@ -155,4 +156,13 @@ class PlaybackSession(Base):
     start_time: Mapped[datetime] = mapped_column(DateTime, index=True)
     end_time: Mapped[datetime] = mapped_column(DateTime, index=True)
     duration_seconds: Mapped[float] = mapped_column(Float)
-    entry_count: Mapped[int] = mapped_column(Integer)
+    entry_count: Mapped[int] = mapped_column(Integer)
+
+
+class PlatformLibrary(PlatformBase):
+    __tablename__ = "platform_library"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    platform_name: Mapped[str] = mapped_column(String(64), index=True)
+    segment_offset: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    visual_fp: Mapped[str] = mapped_column(Text)

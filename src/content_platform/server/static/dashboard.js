@@ -236,7 +236,7 @@ function renderActiveTab() {
 // Render: OVERVIEW (Real-Time Capture Log)
 function renderOverview() {
   if (state.captures.length === 0) {
-    elements.capturesList.innerHTML = '<tr><td colspan="7" class="loading-state">No captures recorded yet. Run crp-edge agent.</td></tr>';
+    elements.capturesList.innerHTML = '<tr><td colspan="8" class="loading-state">No captures recorded yet. Run crp-edge agent.</td></tr>';
     renderTimeline(state.timeline);
     return;
   }
@@ -257,6 +257,12 @@ function renderOverview() {
       ? `<img src="${c.snapshot_url}" class="preview-thumbnail" alt="Thumb" onclick="openImageWindow('${c.snapshot_url}')">`
       : `<span class="text-muted" style="font-size: 0.75rem;">None</span>`;
 
+    // Platform layout
+    const platform = c.result && c.result.matched_platform ? c.result.matched_platform : 'unknown';
+    const platformHtml = platform !== 'unknown' 
+      ? `<span class="tag platform-${platform.toLowerCase()}" style="background: rgba(167, 139, 250, 0.15); color: #c084fc; border: 1px solid rgba(167, 139, 250, 0.3); padding: 2px 8px; border-radius: 4px; font-weight: 500; font-size: 0.75rem;">${platform}</span>`
+      : `<span class="text-muted" style="font-size: 0.8rem;">-</span>`;
+
     // Category / Tag
     const category = c.result ? c.result.content_type : 'unknown';
     const contentName = c.result ? c.result.content_name : 'Unknown Content';
@@ -270,6 +276,7 @@ function renderOverview() {
         <td style="font-weight: 500;">${date}</td>
         <td style="font-family: monospace; color: #a78bfa;">${c.device_id}</td>
         <td>${snapshotHtml}</td>
+        <td>${platformHtml}</td>
         <td style="font-weight: 600;">${contentName}</td>
         <td><span class="tag ${category}">${category}</span></td>
         <td>

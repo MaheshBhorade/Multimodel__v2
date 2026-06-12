@@ -11,9 +11,9 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 
-from content_platform.server.db import Base, SessionLocal, engine, get_db
+from content_platform.server.db import Base, SessionLocal, engine, get_db, PlatformBase, platform_engine, PlatformSessionLocal
 from content_platform.server.library import seed_reference_library
-from content_platform.server.matching import match_content, initialize_faiss_indexes
+from content_platform.server.matching import match_content, initialize_faiss_indexes, match_platform, initialize_platform_faiss_index
 from content_platform.server.models import Capture, Device, RecognitionResultRecord, ContentLibrary, PlaybackSession
 from content_platform.shared.config import get_settings
 from content_platform.shared.models import CaptureResponse, FingerprintPayload, SnapshotUploadResponse
@@ -25,11 +25,14 @@ SNAPSHOT_ROOT = Path("runtime/snapshots")
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     Base.metadata.create_all(bind=engine)
+    PlatformBase.metadata.create_all(bind=platform_engine)
     SNAPSHOT_ROOT.mkdir(parents=True, exist_ok=True)
     (Path(__file__).parent / "static").mkdir(parents=True, exist_ok=True)
     with SessionLocal() as db:
         seed_reference_library(db)
         initialize_faiss_indexes(db)
+    with PlatformSessionLocal() as db_platform:
+        initialize_platform_faiss_index(db_platform)
     yield
 
 
@@ -49,9 +52,10 @@ logger = logging.getLogger(__name__)
 def process_matching_background(capture_ids: list[int], payload: FingerprintPayload) -> None:
     with open("debug_bg.txt", "a") as f_dbg:
         f_dbg.write(f"Background task started for captures: {capture_ids}\n")
-    with SessionLocal() as db:
+    with SessionLocal() as db, PlatformSessionLocal() as db_platform:
         try:
             initialize_faiss_indexes(db)
+            initialize_platform_faiss_index(db_platform)
             for i, capture_id in enumerate(capture_ids):
                 with open("debug_bg.txt", "a") as f_dbg:
                     f_dbg.write(f"Processing capture: {capture_id}\n")
@@ -76,8 +80,9 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                 )
                 
                 result = match_content(db, single_payload)
+                matched_plat = match_platform(db_platform, single_payload)
                 with open("debug_bg.txt", "a") as f_dbg:
-                    f_dbg.write(f"Matched capture {capture_id} to: {result.content_name} ({result.content_type})\n")
+                    f_dbg.write(f"Matched capture {capture_id} to: {result.content_name} ({result.content_type}) | Platform: {matched_plat}\n")
                 
                 # Add recognition record
                 record = RecognitionResultRecord(
@@ -89,6 +94,7 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                     audio_score=result.breakdown.audio_score,
                     ocr_score=result.breakdown.ocr_score,
                     logo_score=result.breakdown.logo_score,
+                    matched_platform=matched_plat,
                 )
                 db.add(record)
                 
@@ -271,6 +277,7 @@ def list_captures(
                     "content_name": c.result.content_name,
                     "content_type": c.result.content_type,
                     "confidence": c.result.confidence,
+                    "matched_platform": c.result.matched_platform,
                     "breakdown": {
                         "visual_score": c.result.visual_score,
                         "audio_score": c.result.audio_score,

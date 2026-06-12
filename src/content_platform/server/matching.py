@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import numpy as np
 from pathlib import Path
 from content_platform.server.faiss_index import FAISSIndex
+from content_platform.server.models import ContentLibrary, PlatformLibrary
+from content_platform.shared.models import FingerprintPayload, MatchBreakdown, RecognitionResult
 
 import numpy as np
 from sqlalchemy import select
@@ -21,21 +23,151 @@ AUDIO_META_PATH = FAISS_INDEX_DIR / "audio_meta.json"
 visual_index = None
 audio_index = None
 
+PLATFORM_VISUAL_INDEX_PATH = FAISS_INDEX_DIR / "platform_visual.index"
+PLATFORM_VISUAL_META_PATH = FAISS_INDEX_DIR / "platform_visual_meta.json"
+platform_visual_index = None
+
 import logging
 logger = logging.getLogger(__name__)
 
+
+def initialize_platform_faiss_index(db_platform: Session) -> None:
+    global platform_visual_index
+    db_count = db_platform.query(PlatformLibrary).count()
+    if platform_visual_index is not None:
+        if len(platform_visual_index.id_to_content) == db_count and platform_visual_index.dim == FAISS_VISUAL_DIM:
+            return
+        logger.info(f"Platform FAISS index count/dim mismatch with DB. Rebuilding...")
+        platform_visual_index = None
+
+    # Try loading from disk first
+    if PLATFORM_VISUAL_INDEX_PATH.exists() and PLATFORM_VISUAL_META_PATH.exists():
+        try:
+            loaded_index = FAISSIndex.load(str(PLATFORM_VISUAL_INDEX_PATH), str(PLATFORM_VISUAL_META_PATH), dim=FAISS_VISUAL_DIM, gpu=True)
+            if len(loaded_index.id_to_content) == db_count:
+                platform_visual_index = loaded_index
+                logger.info("Platform FAISS index loaded from disk successfully.")
+                return
+            logger.info(f"Platform FAISS index on disk size ({len(loaded_index.id_to_content)}) mismatch with DB ({db_count}). Rebuilding...")
+        except Exception as e:
+            logger.warning(f"Failed to load Platform FAISS index from disk: {e}. Rebuilding...")
+
+    # Rebuild from database
+    logger.info("Rebuilding Platform FAISS index from database PlatformLibrary...")
+    try:
+        vis_idx = FAISSIndex(dim=FAISS_VISUAL_DIM, gpu=True)
+        items = db_platform.query(PlatformLibrary).all()
+        logger.info(f"Found {len(items)} platform library items in DB.")
+        
+        for item in items:
+            try:
+                vis_fp = json.loads(item.visual_fp)
+                if len(vis_fp) == FAISS_VISUAL_DIM:
+                    vis_idx.add(np.array(vis_fp, dtype=np.float32).reshape(1, -1), [item.platform_name])
+            except Exception as e:
+                logger.warning(f"Failed to add platform item {item.id} to FAISS index: {e}")
+                
+        vis_idx.save(str(PLATFORM_VISUAL_INDEX_PATH), str(PLATFORM_VISUAL_META_PATH))
+        logger.info("Platform FAISS index built and saved successfully.")
+        platform_visual_index = vis_idx
+    except Exception as e:
+        logger.error(f"Error rebuilding Platform FAISS index: {e}")
+
+
+def match_platform(db_platform: Session, payload: FingerprintPayload) -> str:
+    initialize_platform_faiss_index(db_platform)
+    
+    if not payload.visual_fps:
+        return "unknown"
+        
+    global platform_visual_index
+    
+    # Check blank visual
+    first_frame = payload.visual_fps[0] if isinstance(payload.visual_fps[0], list) else payload.visual_fps
+    if is_blank_signal(first_frame):
+        return "unknown"
+
+    # Use FAISS index if available and compatible
+    use_faiss = False
+    if platform_visual_index is not None:
+        if isinstance(payload.visual_fps[0], (list, tuple, np.ndarray)):
+            payload_vis_dim = len(payload.visual_fps[0])
+        else:
+            payload_vis_dim = len(payload.visual_fps)
+            
+        if payload_vis_dim == platform_visual_index.dim:
+            use_faiss = True
+
+    matches = []
+    if use_faiss:
+        frames_to_search = payload.visual_fps if isinstance(payload.visual_fps[0], list) else [payload.visual_fps]
+        visual_scores = {}
+        for frame in frames_to_search:
+            frame_arr = np.array(frame, dtype=np.float32)
+            visual_results = platform_visual_index.search(frame_arr, k=5)
+            for platform_name, dist in visual_results:
+                sim = 1 / (1 + dist)
+                if platform_name not in visual_scores or sim > visual_scores[platform_name]:
+                    visual_scores[platform_name] = sim
+                
+        for platform_name, score in visual_scores.items():
+            matches.append({"platform": platform_name, "score": score})
+    else:
+        # Brute force fallback
+        items = db_platform.query(PlatformLibrary).all()
+        if not items:
+            return "unknown"
+            
+        for item in items:
+            try:
+                lib_visual = json.loads(item.visual_fp)
+            except Exception:
+                continue
+                
+            if payload.visual_fps and isinstance(payload.visual_fps[0], (int, float)):
+                sim = cosine_like_similarity(payload.visual_fps, lib_visual)
+            else:
+                similarities = [
+                    cosine_like_similarity(fp, lib_visual)
+                    for fp in payload.visual_fps
+                ]
+                sim = max(similarities) if similarities else 0.0
+                
+            matches.append({"platform": item.platform_name, "score": sim})
+            
+    if not matches:
+        return "unknown"
+        
+    matches.sort(key=lambda x: x["score"], reverse=True)
+    best_match = matches[0]
+    
+    if best_match["score"] >= 0.45:
+        return best_match["platform"]
+        
+    return "unknown"
+
+
 def initialize_faiss_indexes(db: Session) -> None:
     global visual_index, audio_index
+    db_count = db.query(ContentLibrary).count()
     if visual_index is not None and audio_index is not None:
-        return
+        if len(visual_index.id_to_content) == db_count and visual_index.dim == FAISS_VISUAL_DIM and audio_index.dim == FAISS_AUDIO_DIM:
+            return
+        logger.info(f"Content FAISS index count/dim mismatch. Rebuilding...")
+        visual_index = None
+        audio_index = None
 
     # Try loading from disk first
     if VISUAL_INDEX_PATH.exists() and VISUAL_META_PATH.exists() and AUDIO_INDEX_PATH.exists() and AUDIO_META_PATH.exists():
         try:
-            visual_index = FAISSIndex.load(str(VISUAL_INDEX_PATH), str(VISUAL_META_PATH), dim=FAISS_VISUAL_DIM, gpu=True)
-            audio_index = FAISSIndex.load(str(AUDIO_INDEX_PATH), str(AUDIO_META_PATH), dim=FAISS_AUDIO_DIM, gpu=True)
-            logger.info("FAISS indexes loaded from disk successfully.")
-            return
+            vis_loaded = FAISSIndex.load(str(VISUAL_INDEX_PATH), str(VISUAL_META_PATH), dim=FAISS_VISUAL_DIM, gpu=True)
+            aud_loaded = FAISSIndex.load(str(AUDIO_INDEX_PATH), str(AUDIO_META_PATH), dim=FAISS_AUDIO_DIM, gpu=True)
+            if len(vis_loaded.id_to_content) == db_count:
+                visual_index = vis_loaded
+                audio_index = aud_loaded
+                logger.info("FAISS indexes loaded from disk successfully.")
+                return
+            logger.info(f"Content FAISS index on disk size ({len(vis_loaded.id_to_content)}) mismatch with DB ({db_count}). Rebuilding...")
         except Exception as e:
             logger.warning(f"Failed to load FAISS indexes from disk: {e}. Rebuilding from database...")
 
