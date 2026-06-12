@@ -8,13 +8,13 @@ import uvicorn
 from fastapi import Depends, FastAPI, File, Form, Request, UploadFile, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 
 from content_platform.server.db import Base, SessionLocal, engine, get_db
 from content_platform.server.library import seed_reference_library
-from content_platform.server.matching import match_content
-from content_platform.server.models import Capture, Device, RecognitionResultRecord, ContentLibrary
+from content_platform.server.matching import match_content, initialize_faiss_indexes
+from content_platform.server.models import Capture, Device, RecognitionResultRecord, ContentLibrary, PlaybackSession
 from content_platform.shared.config import get_settings
 from content_platform.shared.models import CaptureResponse, FingerprintPayload, SnapshotUploadResponse
 
@@ -29,6 +29,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     (Path(__file__).parent / "static").mkdir(parents=True, exist_ok=True)
     with SessionLocal() as db:
         seed_reference_library(db)
+        initialize_faiss_indexes(db)
     yield
 
 
@@ -45,39 +46,84 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def process_matching_background(capture_id: int, payload: FingerprintPayload) -> None:
+def process_matching_background(capture_ids: list[int], payload: FingerprintPayload) -> None:
+    with open("debug_bg.txt", "a") as f_dbg:
+        f_dbg.write(f"Background task started for captures: {capture_ids}\n")
     with SessionLocal() as db:
         try:
-            capture = db.query(Capture).filter(Capture.id == capture_id).first()
-            if not capture:
-                return
-            
-            result = match_content(db, payload)
-            
-            # Add recognition record
-            record = RecognitionResultRecord(
-                capture_id=capture.id,
-                content_name=result.content_name,
-                content_type=result.content_type,
-                confidence=result.confidence,
-                visual_score=result.breakdown.visual_score,
-                audio_score=result.breakdown.audio_score,
-                ocr_score=result.breakdown.ocr_score,
-                logo_score=result.breakdown.logo_score,
-            )
-            db.add(record)
-            
-            # Update capture status
-            capture.status = "matched"
-            db.commit()
-            logger.info("Background matching complete for capture_id=%d. Content=%s", capture_id, result.content_name)
-        except Exception as e:
-            logger.error("Failed to match capture in background: %s", e)
-            try:
+            initialize_faiss_indexes(db)
+            for i, capture_id in enumerate(capture_ids):
+                with open("debug_bg.txt", "a") as f_dbg:
+                    f_dbg.write(f"Processing capture: {capture_id}\n")
                 capture = db.query(Capture).filter(Capture.id == capture_id).first()
-                if capture:
-                    capture.status = "failed"
-                    db.commit()
+                if not capture:
+                    with open("debug_bg.txt", "a") as f_dbg:
+                        f_dbg.write(f"Capture {capture_id} not found in DB!\n")
+                    continue
+                
+                # Reconstruct a single-second payload for this specific frame
+                single_payload = FingerprintPayload(
+                    device_id=payload.device_id,
+                    timestamp=capture.captured_at,
+                    visual_fps=json.loads(capture.visual_fp),
+                    audio_fp=payload.audio_fp,
+                    snapshot_url=capture.snapshot_url,
+                    batch_count=1,
+                    batch_duration_sec=1,
+                    best_frame_index=0,
+                    confidence_visual=payload.confidence_visual,
+                    confidence_audio=payload.confidence_audio
+                )
+                
+                result = match_content(db, single_payload)
+                with open("debug_bg.txt", "a") as f_dbg:
+                    f_dbg.write(f"Matched capture {capture_id} to: {result.content_name} ({result.content_type})\n")
+                
+                # Add recognition record
+                record = RecognitionResultRecord(
+                    capture_id=capture.id,
+                    content_name=result.content_name,
+                    content_type=result.content_type,
+                    confidence=result.confidence,
+                    visual_score=result.breakdown.visual_score,
+                    audio_score=result.breakdown.audio_score,
+                    ocr_score=result.breakdown.ocr_score,
+                    logo_score=result.breakdown.logo_score,
+                )
+                db.add(record)
+                
+                # Update capture status
+                capture.status = "matched"
+            
+            db.commit()
+            with open("debug_bg.txt", "a") as f_dbg:
+                f_dbg.write(f"Successfully committed transaction for captures: {capture_ids}\n")
+            
+            # Rebuild playback sessions for the device once
+            if capture_ids:
+                first_capture = db.query(Capture).filter(Capture.id == capture_ids[0]).first()
+                if first_capture and first_capture.device:
+                    try:
+                        from content_platform.server.temporal import rebuild_playback_sessions_for_device
+                        rebuild_playback_sessions_for_device(db, first_capture.device.device_id)
+                        with open("debug_bg.txt", "a") as f_dbg:
+                            f_dbg.write(f"Successfully rebuilt playback sessions for device: {first_capture.device.device_id}\n")
+                    except Exception as se:
+                        logger.error("Failed to rebuild playback sessions for device %s: %s", first_capture.device.device_id, se)
+                        with open("debug_bg.txt", "a") as f_dbg:
+                            f_dbg.write(f"Failed to rebuild sessions: {se}\n")
+        except Exception as e:
+            logger.error("Failed to match captures in background: %s", e)
+            with open("debug_bg.txt", "a") as f_dbg:
+                f_dbg.write(f"Error during matching: {e}\n")
+                import traceback
+                traceback.print_exc(file=f_dbg)
+            try:
+                for capture_id in capture_ids:
+                    capture = db.query(Capture).filter(Capture.id == capture_id).first()
+                    if capture and capture.status == "pending":
+                        capture.status = "failed"
+                db.commit()
             except Exception:
                 pass
 
@@ -97,20 +143,37 @@ def ingest_capture(
         db.add(device)
         db.flush()
 
-    capture = Capture(
-        device_id=device.id,
-        captured_at=payload.timestamp,
-        visual_fp=json.dumps(payload.visual_fps),
-        audio_fp=json.dumps(payload.audio_fp),
-        logo_fp="[]",
-        ocr_text="",
-        snapshot_url=payload.snapshot_url,
-        status="pending",
-    )
-    db.add(capture)
+    from datetime import timedelta
+    created_captures = []
+    
+    # We will create individual captures (one for each second of the batch)
+    num_frames = len(payload.visual_fps) if payload.visual_fps else 1
+    
+    for i in range(num_frames):
+        captured_at = payload.timestamp + timedelta(seconds=i)
+        
+        # Check if this frame is the one that has the snapshot
+        snapshot_url = payload.snapshot_url if i == payload.best_frame_index else None
+        
+        vis_fp = [payload.visual_fps[i]] if payload.visual_fps else []
+        
+        capture = Capture(
+            device_id=device.id,
+            captured_at=captured_at,
+            visual_fp=json.dumps(vis_fp),
+            audio_fp=json.dumps(payload.audio_fp),
+            logo_fp="[]",
+            ocr_text="",
+            snapshot_url=snapshot_url,
+            status="pending",
+        )
+        db.add(capture)
+        created_captures.append(capture)
+        
     db.commit()
 
-    background_tasks.add_task(process_matching_background, capture.id, payload)
+    capture_ids = [c.id for c in created_captures]
+    background_tasks.add_task(process_matching_background, capture_ids, payload)
 
     temp_result = RecognitionResult(
         content_name="Matching in progress...",
@@ -119,7 +182,10 @@ def ingest_capture(
         breakdown=MatchBreakdown(visual_score=0.0, audio_score=0.0, ocr_score=0.0, logo_score=0.0),
         matched_channel=None
     )
-    return CaptureResponse(capture_id=capture.id, result=temp_result)
+    
+    # Return the capture corresponding to the best_frame_index, or the first one
+    return_capture = created_captures[payload.best_frame_index] if payload.best_frame_index < len(created_captures) else created_captures[0]
+    return CaptureResponse(capture_id=return_capture.id, result=temp_result)
 
 
 @app.post("/api/v1/snapshots", response_model=SnapshotUploadResponse)
@@ -179,7 +245,8 @@ def list_captures(
     
     total = query.count()
     captures = (
-        query.order_by(Capture.captured_at.desc())
+        query.options(joinedload(Capture.device), joinedload(Capture.result))
+        .order_by(Capture.captured_at.desc())
         .limit(limit)
         .offset(offset)
         .all()
@@ -309,13 +376,26 @@ def resolve_capture(capture_id: int, payload: CaptureResolvePayload, db: Session
         
     external_content_id = f"manual-{payload.category}-{str(uuid.uuid4())[:8]}"
     
+    # Try to unpack the 2D visual fingerprint list if nested, to ensure library gets a 1D list
+    try:
+        vis_list = json.loads(capture.visual_fp)
+        if vis_list and isinstance(vis_list[0], list):
+            visual_fp_val = vis_list[0]
+            visual_fp_str = json.dumps(visual_fp_val)
+        else:
+            visual_fp_val = vis_list
+            visual_fp_str = capture.visual_fp
+    except Exception:
+        visual_fp_val = []
+        visual_fp_str = capture.visual_fp
+    
     # Create content library entry
     library_item = ContentLibrary(
         external_content_id=external_content_id,
         title=payload.title,
         category=payload.category,
         channel_name=payload.channel_name,
-        visual_fp=capture.visual_fp,
+        visual_fp=visual_fp_str,
         audio_fp=capture.audio_fp,
         logo_fp=capture.logo_fp,
         ocr_keywords=capture.ocr_text,
@@ -327,7 +407,7 @@ def resolve_capture(capture_id: int, payload: CaptureResolvePayload, db: Session
     from content_platform.server.vector_store import vector_store
     vector_store.upsert_reference(
         external_content_id,
-        json.loads(capture.visual_fp) if capture.visual_fp else [],
+        visual_fp_val,
         json.loads(capture.logo_fp) if capture.logo_fp else [],
     )
     
@@ -354,6 +434,14 @@ def resolve_capture(capture_id: int, payload: CaptureResolvePayload, db: Session
         db.add(result_record)
         
     db.commit()
+    
+    # Rebuild playback sessions for the device
+    try:
+        from content_platform.server.temporal import rebuild_playback_sessions_for_device
+        rebuild_playback_sessions_for_device(db, capture.device.device_id)
+    except Exception as se:
+        logger.error("Failed to rebuild playback sessions for device %s after resolve: %s", capture.device.device_id, se)
+        
     return {"status": "resolved", "library_id": library_item.id}
 
 
@@ -405,21 +493,17 @@ def get_analytics_ad_frequency(db: Session = Depends(get_db)):
 
 @app.get("/api/v1/analytics/timeline")
 def get_analytics_timeline(db: Session = Depends(get_db)):
-    # Get last 20 matched captures in chronological order
-    subquery = (
-        db.query(Capture.id)
+    # Get last 20 matched captures in chronological order (optimized, no subquery)
+    results = (
+        db.query(Capture)
+        .options(joinedload(Capture.device), joinedload(Capture.result))
         .join(RecognitionResultRecord, Capture.id == RecognitionResultRecord.capture_id)
         .order_by(Capture.captured_at.desc())
         .limit(20)
-        .subquery()
-    )
-    results = (
-        db.query(Capture)
-        .join(RecognitionResultRecord, Capture.id == RecognitionResultRecord.capture_id)
-        .filter(Capture.id.in_(select(subquery.c.id)))
-        .order_by(Capture.captured_at.asc())
         .all()
     )
+    # Sort chronologically ascending
+    results.reverse()
     return [
         {
             "timestamp": c.captured_at.isoformat() + "Z",
@@ -429,6 +513,118 @@ def get_analytics_timeline(db: Session = Depends(get_db)):
         }
         for c in results if c.result
     ]
+
+
+@app.get("/api/v1/analytics/sessions")
+def get_analytics_sessions(db: Session = Depends(get_db)):
+    # Get last 20 playback sessions in chronological order
+    sessions = (
+        db.query(PlaybackSession)
+        .order_by(PlaybackSession.start_time.desc())
+        .limit(20)
+        .all()
+    )
+    sessions.reverse()
+    return [
+        {
+            "id": s.id,
+            "device_id": s.device_id,
+            "content_name": s.content_name,
+            "category": s.content_type,
+            "start_time": s.start_time.isoformat() + "Z",
+            "end_time": s.end_time.isoformat() + "Z",
+            "duration_seconds": s.duration_seconds,
+            "entry_count": s.entry_count,
+        }
+        for s in sessions
+    ]
+
+
+import csv
+import io
+from fastapi.responses import StreamingResponse
+
+@app.get("/api/v1/analytics/sessions/export")
+def export_sessions_csv(db: Session = Depends(get_db)):
+    sessions = (
+        db.query(PlaybackSession)
+        .order_by(PlaybackSession.start_time.desc())
+        .all()
+    )
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Session ID", "Device ID", "Content Name", "Category", 
+        "Start Time", "End Time", "Duration (seconds)", "Consecutive Detections"
+    ])
+    
+    for s in sessions:
+        writer.writerow([
+            s.id,
+            s.device_id,
+            s.content_name,
+            s.content_type,
+            s.start_time.isoformat() + "Z",
+            s.end_time.isoformat() + "Z",
+            s.duration_seconds,
+            s.entry_count
+        ])
+        
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=playback_sessions.csv"}
+    )
+
+
+@app.get("/api/v1/captures/export")
+def export_captures_csv(db: Session = Depends(get_db)):
+    captures = (
+        db.query(Capture)
+        .outerjoin(RecognitionResultRecord, Capture.id == RecognitionResultRecord.capture_id)
+        .order_by(Capture.captured_at.desc())
+        .all()
+    )
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Capture ID", "Device ID", "Timestamp", "Status", 
+        "Content Name", "Category", "Confidence", 
+        "Visual Score", "Audio Score", "OCR Score", "Logo Score"
+    ])
+    
+    for c in captures:
+        content_name = c.result.content_name if c.result else "Unknown"
+        category = c.result.content_type if c.result else "unknown"
+        confidence = c.result.confidence if c.result else 0.0
+        v_score = c.result.visual_score if c.result else 0.0
+        a_score = c.result.audio_score if c.result else 0.0
+        o_score = c.result.ocr_score if c.result else 0.0
+        l_score = c.result.logo_score if c.result else 0.0
+        
+        writer.writerow([
+            c.id,
+            c.device.device_id if c.device else "Unknown",
+            c.captured_at.isoformat() + "Z",
+            c.status,
+            content_name,
+            category,
+            confidence,
+            v_score,
+            a_score,
+            o_score,
+            l_score
+        ])
+        
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=realtime_captures.csv"}
+    )
 
 
 # Mount static files for dashboard last to avoid blocking API routes

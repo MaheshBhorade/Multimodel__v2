@@ -84,9 +84,17 @@ class FingerprintExtractor:
         """
         now = datetime.now(UTC)
         
+        if not hasattr(self, "_last_sim_capture_time") or self._last_sim_capture_time is None:
+            self._last_sim_capture_time = now
+        else:
+            elapsed = (now - self._last_sim_capture_time).total_seconds()
+            if elapsed < settings.capture_interval_seconds:
+                return None
+            self._last_sim_capture_time = now
+        
         # Every 10 seconds, switch between 2 songs
         idx = (int(now.timestamp()) // 10) % 2
-        song_name = "bangles" if idx == 0 else "shararat"
+        song_name = "goyamart episode 91" if idx == 0 else "goyamart episode 92"
 
         self._load_simulated_segments()
         
@@ -99,10 +107,10 @@ class FingerprintExtractor:
         else:
             # Fallback to dummy vectors of correct shapes
             if idx == 0:
-                visual_fp = [0.88, 0.23, 0.61, 0.79, 0.15, 0.34, 0.92, 0.41] + [0.0] * 248
+                visual_fp = [0.88, 0.23, 0.61, 0.79, 0.15, 0.34, 0.92, 0.41] + [0.0] * 952
                 audio_fp = [0.88, 0.23, 0.61, 0.79, 0.15, 0.34, 0.92, 0.41, 0.12, 0.44, 0.33, 0.11, 0.05] + [0.0] * 117
             else:
-                visual_fp = [0.45, 0.67, 0.23, 0.89, 0.12, 0.76, 0.33, 0.54] + [0.0] * 248
+                visual_fp = [0.45, 0.67, 0.23, 0.89, 0.12, 0.76, 0.33, 0.54] + [0.0] * 952
                 audio_fp = [0.45, 0.67, 0.23, 0.89, 0.12, 0.76, 0.33, 0.54, 0.05, 0.22, 0.11, 0.05, 0.02] + [0.0] * 117
             visual_fps = [visual_fp] * 10
         

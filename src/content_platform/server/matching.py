@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 # FAISS index configuration
 FAISS_VISUAL_DIM = 960
-FAISS_AUDIO_DIM = 13
+FAISS_AUDIO_DIM = 130
 FAISS_INDEX_DIR = Path("runtime/faiss")
 FAISS_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 VISUAL_INDEX_PATH = FAISS_INDEX_DIR / "visual.index"
@@ -18,15 +18,56 @@ VISUAL_META_PATH = FAISS_INDEX_DIR / "visual_meta.json"
 AUDIO_INDEX_PATH = FAISS_INDEX_DIR / "audio.index"
 AUDIO_META_PATH = FAISS_INDEX_DIR / "audio_meta.json"
 
-if VISUAL_INDEX_PATH.exists() and VISUAL_META_PATH.exists():
-    visual_index = FAISSIndex.load(str(VISUAL_INDEX_PATH), str(VISUAL_META_PATH), dim=FAISS_VISUAL_DIM, gpu=True)
-else:
-    visual_index = None
+visual_index = None
+audio_index = None
 
-if AUDIO_INDEX_PATH.exists() and AUDIO_META_PATH.exists():
-    audio_index = FAISSIndex.load(str(AUDIO_INDEX_PATH), str(AUDIO_META_PATH), dim=FAISS_AUDIO_DIM, gpu=True)
-else:
-    audio_index = None
+import logging
+logger = logging.getLogger(__name__)
+
+def initialize_faiss_indexes(db: Session) -> None:
+    global visual_index, audio_index
+    if visual_index is not None and audio_index is not None:
+        return
+
+    # Try loading from disk first
+    if VISUAL_INDEX_PATH.exists() and VISUAL_META_PATH.exists() and AUDIO_INDEX_PATH.exists() and AUDIO_META_PATH.exists():
+        try:
+            visual_index = FAISSIndex.load(str(VISUAL_INDEX_PATH), str(VISUAL_META_PATH), dim=FAISS_VISUAL_DIM, gpu=True)
+            audio_index = FAISSIndex.load(str(AUDIO_INDEX_PATH), str(AUDIO_META_PATH), dim=FAISS_AUDIO_DIM, gpu=True)
+            logger.info("FAISS indexes loaded from disk successfully.")
+            return
+        except Exception as e:
+            logger.warning(f"Failed to load FAISS indexes from disk: {e}. Rebuilding from database...")
+
+    # Rebuild from database
+    logger.info("Rebuilding FAISS indexes from database ContentLibrary...")
+    try:
+        vis_idx = FAISSIndex(dim=FAISS_VISUAL_DIM, gpu=True)
+        aud_idx = FAISSIndex(dim=FAISS_AUDIO_DIM, gpu=True)
+        
+        items = db.query(ContentLibrary).all()
+        logger.info(f"Found {len(items)} library items in DB.")
+        
+        for item in items:
+            try:
+                vis_fp = json.loads(item.visual_fp)
+                aud_fp = json.loads(item.audio_fp)
+                if len(vis_fp) == FAISS_VISUAL_DIM:
+                    vis_idx.add(np.array(vis_fp, dtype=np.float32).reshape(1, -1), [item.external_content_id])
+                if len(aud_fp) == FAISS_AUDIO_DIM:
+                    aud_idx.add(np.array(aud_fp, dtype=np.float32).reshape(1, -1), [item.external_content_id])
+            except Exception as e:
+                logger.warning(f"Failed to add item {item.id} to FAISS index: {e}")
+                
+        vis_idx.save(str(VISUAL_INDEX_PATH), str(VISUAL_META_PATH))
+        aud_idx.save(str(AUDIO_INDEX_PATH), str(AUDIO_META_PATH))
+        logger.info("FAISS indexes built and saved successfully.")
+        
+        visual_index = vis_idx
+        audio_index = aud_idx
+    except Exception as e:
+        logger.error(f"Error rebuilding FAISS indexes: {e}")
+
 
 from content_platform.server.models import ContentLibrary
 from content_platform.shared.models import FingerprintPayload, MatchBreakdown, RecognitionResult
@@ -150,17 +191,6 @@ def _is_audio_unavailable(audio_fp) -> bool:
 
 
 def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult:
-    # 1. Fetch all segments from DB
-    contents = db.scalars(select(ContentLibrary)).all()
-    if not contents:
-        return RecognitionResult(
-            content_name="Unknown Content",
-            content_type="unknown",
-            confidence=0.0,
-            breakdown=MatchBreakdown(visual_score=0.0, audio_score=0.0, ocr_score=0.0, logo_score=0.0),
-            matched_channel=None,
-        )
-
     # Check if more than 50% of the payload frames are blank/lost video signal (like a green screen)
     is_payload_blank = False
     if payload.visual_fps:
@@ -173,9 +203,27 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
     # Check if audio is unavailable (all zeros = recording failed on Pi)
     audio_missing = _is_audio_unavailable(payload.audio_fp)
 
-    # Use FAISS indexes when available; otherwise fallback to brute‑force.
-    matches = []
+    # Use FAISS indexes when available and dimensions match; otherwise fallback to brute‑force.
+    use_faiss = False
     if visual_index is not None and audio_index is not None and not is_payload_blank and not audio_missing:
+        if payload.visual_fps:
+            if isinstance(payload.visual_fps[0], (list, tuple, np.ndarray)):
+                payload_vis_dim = len(payload.visual_fps[0])
+            else:
+                payload_vis_dim = len(payload.visual_fps)
+        else:
+            payload_vis_dim = 0
+            
+        if isinstance(payload.audio_fp, (list, tuple, np.ndarray)):
+            payload_aud_dim = len(payload.audio_fp)
+        else:
+            payload_aud_dim = 0
+            
+        if payload_vis_dim == visual_index.dim and payload_aud_dim == audio_index.dim:
+            use_faiss = True
+
+    matches = []
+    if use_faiss:
         # Prepare query vectors
         if isinstance(payload.visual_fps[0], list):
             avg_visual = np.mean(np.array(payload.visual_fps, dtype=np.float32), axis=0)
@@ -185,8 +233,19 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
         # Search indexes (k=10)
         visual_results = visual_index.search(avg_visual, k=10)
         audio_results = audio_index.search(audio_vec, k=10)
-        visual_scores = {cid: 1/(1+dist) for cid, dist in visual_results}
-        audio_scores = {cid: 1/(1+dist) for cid, dist in audio_results}
+        
+        visual_scores = {}
+        for cid, dist in visual_results:
+            sim = 1 / (1 + dist)
+            if cid not in visual_scores or sim > visual_scores[cid]:
+                visual_scores[cid] = sim
+
+        audio_scores = {}
+        for cid, dist in audio_results:
+            sim = 1 / (1 + dist)
+            if cid not in audio_scores or sim > audio_scores[cid]:
+                audio_scores[cid] = sim
+                
         # Combine scores per content
         all_cids = set(visual_scores.keys()) | set(audio_scores.keys())
         for cid in all_cids:
@@ -207,7 +266,7 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
                 else:
                     combined_score = (vis_sim * 0.70) + (aud_sim * 0.30)
             # Retrieve content object from DB
-            content_obj = db.execute(select(ContentLibrary).where(ContentLibrary.external_content_id == cid)).scalar_one_or_none()
+            content_obj = db.execute(select(ContentLibrary).where(ContentLibrary.external_content_id == cid)).scalars().first()
             if content_obj:
                 matches.append({
                     "content": content_obj,
@@ -216,6 +275,17 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
                     "audio_score": aud_sim,
                 })
     else:
+        # Fetch all segments from DB only for brute‑force fallback
+        contents = db.scalars(select(ContentLibrary)).all()
+        if not contents:
+            return RecognitionResult(
+                content_name="Unknown Content",
+                content_type="unknown",
+                confidence=0.0,
+                breakdown=MatchBreakdown(visual_score=0.0, audio_score=0.0, ocr_score=0.0, logo_score=0.0),
+                matched_channel=None,
+            )
+
         # Fallback to original brute‑force method
         for content in contents:
             # Load library vectors
@@ -278,7 +348,7 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
             votes[cid] = []
         votes[cid].append(m)
 
-    # Segment Voting: choose winner with highest vote count, tie-break by max individual score
+    # Segment Voting: choose winner prioritizing max individual score first, using vote count as a tie-breaker
     winner_cid = None
     max_votes = -1
     best_winner_score = -1
@@ -286,7 +356,7 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
     for cid, group_matches in votes.items():
         vote_count = len(group_matches)
         group_max_score = max(m["score"] for m in group_matches)
-        if vote_count > max_votes or (vote_count == max_votes and group_max_score > best_winner_score):
+        if group_max_score > best_winner_score or (abs(group_max_score - best_winner_score) < 1e-9 and vote_count > max_votes):
             max_votes = vote_count
             winner_cid = cid
             best_winner_score = group_max_score

@@ -143,3 +143,16 @@ class RecognitionResultRecord(Base):
     capture: Mapped["Capture"] = relationship(
         back_populates="result"
     )
+
+
+class PlaybackSession(Base):
+    __tablename__ = "playback_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(64), index=True)
+    content_name: Mapped[str] = mapped_column(String(255), index=True)
+    content_type: Mapped[str] = mapped_column(String(64), index=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime, index=True)
+    end_time: Mapped[datetime] = mapped_column(DateTime, index=True)
+    duration_seconds: Mapped[float] = mapped_column(Float)
+    entry_count: Mapped[int] = mapped_column(Integer)

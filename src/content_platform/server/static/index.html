@@ -145,9 +145,17 @@
 
         <!-- Capture Logs Table -->
         <div class="section-card">
-          <div class="card-header">
-            <h3>Real-Time Capture Log</h3>
-            <span class="caption">Showing latest 15 captures from all units</span>
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3>Real-Time Capture Log</h3>
+              <span class="caption">Showing latest 15 captures from all units</span>
+            </div>
+            <button id="btn-export-captures" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              </svg>
+              Export Captures
+            </button>
           </div>
           <div class="table-responsive">
             <table class="data-table" id="captures-table">
@@ -167,6 +175,17 @@
                 <tr><td colspan="7" class="loading-state">Loading latest captures...</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- Timeline / Flow log Card -->
+        <div class="section-card" style="margin-top: 24px;">
+          <div class="card-header">
+            <h3>Recent Content Playback Timeline</h3>
+            <span class="caption">Chronological transition log of OTT & TV content (per second/capture entries)</span>
+          </div>
+          <div id="overview-timeline" style="margin-top: 16px;">
+            <div class="loading-state">Generating timeline report...</div>
           </div>
         </div>
       </section>
@@ -258,14 +277,23 @@
           </div>
         </div>
 
-        <!-- Timeline / Flow log Card -->
+
+        <!-- Playback Sessions Card (Temporal Engine) -->
         <div class="section-card">
-          <div class="card-header">
-            <h3>Recent Content Playback Timeline</h3>
-            <span class="caption">Chronological transition log of OTT & TV content</span>
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3>Aggregated Playback Sessions (Temporal Engine)</h3>
+              <span class="caption">Grouped contiguous playback sessions based on temporal rules (12/10 thresholds)</span>
+            </div>
+            <button id="btn-export-sessions" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              </svg>
+              Export Sessions
+            </button>
           </div>
-          <div id="analytics-timeline" style="margin-top: 16px;">
-            <div class="loading-state">Generating timeline report...</div>
+          <div id="analytics-sessions" style="margin-top: 16px;">
+            <div class="loading-state">Generating playback sessions report...</div>
           </div>
         </div>
       </section>

@@ -135,6 +135,24 @@ function setupEventListeners() {
 
   // Add Library Modal Submit
   elements.addLibraryForm.addEventListener('submit', handleAddLibrarySubmit);
+
+  // CSV Export for Real-Time Captures
+  const exportCapturesBtn = document.getElementById('btn-export-captures');
+  if (exportCapturesBtn) {
+    exportCapturesBtn.addEventListener('click', () => {
+      showToast('Exporting', 'Preparing captures CSV download...', 'info');
+      window.location.href = '/api/v1/captures/export';
+    });
+  }
+
+  // CSV Export for Temporal Playback Sessions
+  const exportSessionsBtn = document.getElementById('btn-export-sessions');
+  if (exportSessionsBtn) {
+    exportSessionsBtn.addEventListener('click', () => {
+      showToast('Exporting', 'Preparing sessions CSV download...', 'info');
+      window.location.href = '/api/v1/analytics/sessions/export';
+    });
+  }
 }
 
 // Polling Timers
@@ -153,17 +171,19 @@ function stopPolling() {
 // Global API Data Fetcher
 async function fetchData() {
   try {
-    const [devices, captures, library, unknowns] = await Promise.all([
+    const [devices, captures, library, unknowns, timeline] = await Promise.all([
       fetch('/api/v1/devices').then(r => r.json()),
       fetch('/api/v1/captures?limit=50').then(r => r.json()),
       fetch('/api/v1/library').then(r => r.json()),
-      fetch('/api/v1/captures?only_unknown=true&limit=50').then(r => r.json())
+      fetch('/api/v1/captures?only_unknown=true&limit=50').then(r => r.json()),
+      fetch('/api/v1/analytics/timeline').then(r => r.json())
     ]);
 
     state.devices = devices;
     state.captures = captures.items;
     state.library = library;
     state.unknowns = unknowns.items;
+    state.timeline = timeline;
 
     updateKPIs();
     renderActiveTab();
@@ -217,6 +237,7 @@ function renderActiveTab() {
 function renderOverview() {
   if (state.captures.length === 0) {
     elements.capturesList.innerHTML = '<tr><td colspan="7" class="loading-state">No captures recorded yet. Run crp-edge agent.</td></tr>';
+    renderTimeline(state.timeline);
     return;
   }
 
@@ -263,6 +284,8 @@ function renderOverview() {
       </tr>
     `;
   }).join('');
+
+  renderTimeline(state.timeline);
 }
 
 // Render: REVIEW QUEUE
@@ -512,17 +535,17 @@ window.openImageWindow = function(url) {
 // Render: ANALYTICS (Charts & Timeline)
 async function renderAnalytics() {
   try {
-    const [overview, share, ads, timeline] = await Promise.all([
+    const [overview, share, ads, sessions] = await Promise.all([
       fetch('/api/v1/analytics/overview').then(r => r.json()),
       fetch('/api/v1/analytics/share').then(r => r.json()),
       fetch('/api/v1/analytics/ad-frequency').then(r => r.json()),
-      fetch('/api/v1/analytics/timeline').then(r => r.json())
+      fetch('/api/v1/analytics/sessions').then(r => r.json())
     ]);
 
     // Update charts
     renderShareChart(share);
     renderAdChart(ads);
-    renderTimeline(timeline);
+    renderSessions(sessions);
   } catch (error) {
     console.error('Error rendering analytics tab:', error);
     showToast('Analytics Error', 'Failed to retrieve charts data.', 'danger');
@@ -636,7 +659,7 @@ function renderAdChart(adData) {
 }
 
 function renderTimeline(items) {
-  const container = document.getElementById('analytics-timeline');
+  const container = document.getElementById('overview-timeline');
   if (!container) return;
 
   if (!items || items.length === 0) {
@@ -658,7 +681,46 @@ function renderTimeline(items) {
           </div>
           <div style="text-align: right;">
             <span style="font-size: 0.8rem; color: var(--text-secondary);">${timeStr}</span>
-            <span style="display: block; font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">Device: ${item.device_id}</span>
+            <span style="display: block; font-size: 0.75rem; color: var(--text-muted); font-family: monospace; margin-top: 4px;">Device: ${item.device_id}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function renderSessions(items) {
+  const container = document.getElementById('analytics-sessions');
+  if (!container) return;
+
+  if (!items || items.length === 0) {
+    container.innerHTML = '<div class="loading-state">No playback sessions recorded yet.</div>';
+    return;
+  }
+
+  let html = `<div class="timeline-container" style="display: flex; flex-direction: column; gap: 16px; position: relative; padding-left: 24px; border-left: 2px solid var(--border-glass); margin-left: 10px;">`;
+
+  items.forEach(item => {
+    const startStr = new Date(item.start_time).toLocaleString();
+    const endStr = new Date(item.end_time).toLocaleTimeString();
+    const duration = Math.round(item.duration_seconds);
+    html += `
+      <div class="timeline-item" style="position: relative;">
+        <div class="timeline-dot" style="position: absolute; left: -31px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--color-primary); border: 2px solid var(--bg-secondary); box-shadow: 0 0 6px var(--color-primary);"></div>
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); padding: 12px 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <span style="font-weight: 600; font-size: 0.95rem; color: var(--text-primary);">${item.content_name}</span>
+            <span class="tag ${item.category}" style="margin-left: 10px;">${item.category}</span>
+            <span style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+              Played for: <strong>${duration}s</strong> (${item.entry_count} consecutive detections)
+            </span>
+          </div>
+          <div style="text-align: right;">
+            <span style="font-size: 0.8rem; color: var(--text-secondary);">${startStr} - ${endStr}</span>
+            <span style="display: block; font-size: 0.75rem; color: var(--text-muted); font-family: monospace; margin-top: 4px;">Device: ${item.device_id}</span>
           </div>
         </div>
       </div>
