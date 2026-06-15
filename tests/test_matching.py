@@ -42,6 +42,8 @@ class MockDB:
                 self.items = items
             def all(self):
                 return self.items
+            def first(self):
+                return self.items[0] if self.items else None
         return MockQuery(self.items)
 
 

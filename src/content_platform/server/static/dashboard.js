@@ -6,7 +6,11 @@ const state = {
   library: [],
   unknowns: [],
   pollingInterval: null,
-  isPolling: true
+  isPolling: true,
+  capturesPage: 0,
+  capturesLimit: 15,
+  totalCaptures: 0,
+  eventSource: null
 };
 
 // Chart.js references
@@ -67,34 +71,67 @@ const tabMeta = {
 document.addEventListener('DOMContentLoaded', () => {
   setupNavigation();
   setupEventListeners();
-  startPolling();
+  startSSE();
   fetchData();
 });
 
+// Helper to navigate to a tab and update UI/State
+function navigateToTab(tabId, updateHash = false) {
+  if (!tabMeta[tabId]) return;
+  
+  state.activeTab = tabId;
+  
+  // Update sidebar active classes
+  elements.navItems.forEach(nav => {
+    if (nav.getAttribute('data-tab') === tabId) {
+      nav.classList.add('active');
+    } else {
+      nav.classList.remove('active');
+    }
+  });
+  
+  // Update panel view
+  elements.tabPanes.forEach(pane => {
+    if (pane.id === `tab-${tabId}`) {
+      pane.classList.add('active');
+    } else {
+      pane.classList.remove('active');
+    }
+  });
+  
+  // Update Header Text
+  elements.tabTitle.textContent = tabMeta[tabId].title;
+  elements.tabDesc.textContent = tabMeta[tabId].desc;
+  
+  if (updateHash) {
+    window.location.hash = tabId;
+  }
+  
+  // Load specific view data immediately
+  fetchData();
+}
+
 // Setup Sidebar Tab Navigation
 function setupNavigation() {
+  // Listen for hash changes to support browser history (back/forward buttons)
+  window.addEventListener('hashchange', () => {
+    const tabId = window.location.hash.replace('#', '') || 'overview';
+    if (state.activeTab !== tabId) {
+      navigateToTab(tabId, false);
+    }
+  });
+
+  // Handle click on nav items
   elements.navItems.forEach(item => {
     item.addEventListener('click', () => {
       const tabId = item.getAttribute('data-tab');
-      
-      // Update sidebar state
-      elements.navItems.forEach(nav => nav.classList.remove('active'));
-      item.classList.add('active');
-      
-      // Update panel view
-      elements.tabPanes.forEach(pane => pane.classList.remove('active'));
-      const activePane = document.getElementById(`tab-${tabId}`);
-      if (activePane) activePane.classList.add('active');
-      
-      // Update Header Text
-      state.activeTab = tabId;
-      elements.tabTitle.textContent = tabMeta[tabId].title;
-      elements.tabDesc.textContent = tabMeta[tabId].desc;
-      
-      // Load specific view data immediately
-      fetchData();
+      navigateToTab(tabId, true);
     });
   });
+
+  // Initialize from current hash on load
+  const initialTab = window.location.hash.replace('#', '') || 'overview';
+  navigateToTab(initialTab, true);
 }
 
 // Setup Event Listeners for Modals and Controls
@@ -109,10 +146,10 @@ function setupEventListeners() {
   elements.autoRefresh.addEventListener('change', (e) => {
     state.isPolling = e.target.checked;
     if (state.isPolling) {
-      startPolling();
-      showToast('Live Sync Active', 'Auto-refresh resumed (5s interval)', 'info');
+      startSSE();
+      showToast('Live Sync Active', 'SSE Stream connected', 'info');
     } else {
-      stopPolling();
+      stopSSE();
       showToast('Live Sync Paused', 'Manual refresh required', 'info');
     }
   });
@@ -136,35 +173,64 @@ function setupEventListeners() {
   // Add Library Modal Submit
   elements.addLibraryForm.addEventListener('submit', handleAddLibrarySubmit);
 
-  // CSV Export for Real-Time Captures
-  const exportCapturesBtn = document.getElementById('btn-export-captures');
-  if (exportCapturesBtn) {
-    exportCapturesBtn.addEventListener('click', () => {
-      showToast('Exporting', 'Preparing captures CSV download...', 'info');
-      window.location.href = '/api/v1/captures/export';
+  // Pagination controls
+  const prevBtn = document.getElementById('btn-prev-page');
+  const nextBtn = document.getElementById('btn-next-page');
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (state.capturesPage > 0) {
+        state.capturesPage--;
+        fetchData();
+      }
     });
   }
-
-  // CSV Export for Temporal Playback Sessions
-  const exportSessionsBtn = document.getElementById('btn-export-sessions');
-  if (exportSessionsBtn) {
-    exportSessionsBtn.addEventListener('click', () => {
-      showToast('Exporting', 'Preparing sessions CSV download...', 'info');
-      window.location.href = '/api/v1/analytics/sessions/export';
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      const totalPages = Math.ceil(state.totalCaptures / state.capturesLimit) || 1;
+      if (state.capturesPage + 1 < totalPages) {
+        state.capturesPage++;
+        fetchData();
+      }
     });
   }
 }
 
-// Polling Timers
-function startPolling() {
-  stopPolling(); // Clear any existing
-  state.pollingInterval = setInterval(fetchData, 5000);
+// Server-Sent Events (SSE) and Fallback Polling
+function startSSE() {
+  stopSSE();
+  if (!state.isPolling) return;
+  
+  // 30s fallback poll to keep UI fresh if stream drops
+  state.pollingInterval = setInterval(fetchData, 30000);
+  
+  try {
+    state.eventSource = new EventSource('/api/v1/events');
+    state.eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'update') {
+          fetchData();
+        }
+      } catch (e) {
+        console.error('Failed to parse SSE event:', e);
+      }
+    };
+    state.eventSource.onerror = () => {
+      console.warn('SSE disconnected, browser will automatically retry.');
+    };
+  } catch (e) {
+    console.error('EventSource initialization failed:', e);
+  }
 }
 
-function stopPolling() {
+function stopSSE() {
   if (state.pollingInterval) {
     clearInterval(state.pollingInterval);
     state.pollingInterval = null;
+  }
+  if (state.eventSource) {
+    state.eventSource.close();
+    state.eventSource = null;
   }
 }
 
@@ -173,7 +239,7 @@ async function fetchData() {
   try {
     const [devices, captures, library, unknowns, timeline] = await Promise.all([
       fetch('/api/v1/devices').then(r => r.json()),
-      fetch('/api/v1/captures?limit=50').then(r => r.json()),
+      fetch(`/api/v1/captures?limit=${state.capturesLimit}&offset=${state.capturesPage * state.capturesLimit}`).then(r => r.json()),
       fetch('/api/v1/library').then(r => r.json()),
       fetch('/api/v1/captures?only_unknown=true&limit=50').then(r => r.json()),
       fetch('/api/v1/analytics/timeline').then(r => r.json())
@@ -181,6 +247,7 @@ async function fetchData() {
 
     state.devices = devices;
     state.captures = captures.items;
+    state.totalCaptures = captures.total;
     state.library = library;
     state.unknowns = unknowns.items;
     state.timeline = timeline;
@@ -241,8 +308,19 @@ function renderOverview() {
     return;
   }
 
-  // Display top 15 latest captures
-  const items = state.captures.slice(0, 15);
+  // Display paginated captures directly
+  const items = state.captures;
+  
+  // Update Pagination Controls UI
+  const prevBtn = document.getElementById('btn-prev-page');
+  const nextBtn = document.getElementById('btn-next-page');
+  const pageIndicator = document.getElementById('page-indicator');
+  if (prevBtn && nextBtn && pageIndicator) {
+    prevBtn.disabled = state.capturesPage === 0;
+    const totalPages = Math.ceil(state.totalCaptures / state.capturesLimit) || 1;
+    nextBtn.disabled = (state.capturesPage + 1) >= totalPages;
+    pageIndicator.textContent = `Page ${state.capturesPage + 1} of ${totalPages}`;
+  }
   elements.capturesList.innerHTML = items.map(c => {
     const date = new Date(c.captured_at).toLocaleTimeString();
     
@@ -416,12 +494,12 @@ function openResolveModal(captureId) {
   elements.resolveForm.reset();
   
   elements.resolveModal.classList.add('active');
-  stopPolling(); // Pause background polling
+  stopSSE(); // Pause background polling
 }
 
 function hideResolveModal() {
   elements.resolveModal.classList.remove('active');
-  if (state.isPolling) startPolling(); // Resume if enabled
+  if (state.isPolling) startSSE(); // Resume if enabled
 }
 
 // Handle Resolve Modal Submission
@@ -460,12 +538,12 @@ async function handleResolveSubmit(e) {
 function showAddLibraryModal() {
   elements.addLibraryForm.reset();
   elements.addLibraryModal.classList.add('active');
-  stopPolling();
+  stopSSE();
 }
 
 function hideAddLibraryModal() {
   elements.addLibraryModal.classList.remove('active');
-  if (state.isPolling) startPolling();
+  if (state.isPolling) startSSE();
 }
 
 // Handle Add Library Modal Submission

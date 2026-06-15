@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import json
@@ -21,9 +22,31 @@ from content_platform.shared.models import CaptureResponse, FingerprintPayload, 
 settings = get_settings()
 SNAPSHOT_ROOT = Path("runtime/snapshots")
 
+main_loop = None
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[asyncio.Queue] = []
+    
+    async def subscribe(self) -> asyncio.Queue:
+        q = asyncio.Queue()
+        self.active_connections.append(q)
+        return q
+        
+    def unsubscribe(self, q: asyncio.Queue):
+        if q in self.active_connections:
+            self.active_connections.remove(q)
+            
+    async def broadcast(self, data: dict):
+        for q in list(self.active_connections):
+            await q.put(data)
+
+manager = ConnectionManager()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    global main_loop
+    main_loop = asyncio.get_running_loop()
     Base.metadata.create_all(bind=engine)
     PlatformBase.metadata.create_all(bind=platform_engine)
     SNAPSHOT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -56,6 +79,22 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
         try:
             initialize_faiss_indexes(db)
             initialize_platform_faiss_index(db_platform)
+            # Initialize last known platform for the device
+            last_known_platform = "unknown"
+            if capture_ids:
+                first_cap = db.query(Capture).filter(Capture.id == capture_ids[0]).first()
+                if first_cap:
+                    last_rec = (
+                        db.query(RecognitionResultRecord)
+                        .join(Capture, Capture.id == RecognitionResultRecord.capture_id)
+                        .filter(Capture.device_id == first_cap.device_id)
+                        .filter(RecognitionResultRecord.matched_platform != "unknown")
+                        .order_by(Capture.captured_at.desc())
+                        .first()
+                    )
+                    if last_rec and (first_cap.captured_at - last_rec.capture.captured_at).total_seconds() <= 300:
+                        last_known_platform = last_rec.matched_platform
+
             for i, capture_id in enumerate(capture_ids):
                 with open("debug_bg.txt", "a") as f_dbg:
                     f_dbg.write(f"Processing capture: {capture_id}\n")
@@ -81,6 +120,11 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                 
                 result = match_content(db, single_payload)
                 matched_plat = match_platform(db_platform, single_payload)
+                if matched_plat == "unknown":
+                    matched_plat = last_known_platform
+                else:
+                    last_known_platform = matched_plat
+
                 with open("debug_bg.txt", "a") as f_dbg:
                     f_dbg.write(f"Matched capture {capture_id} to: {result.content_name} ({result.content_type}) | Platform: {matched_plat}\n")
                 
@@ -110,7 +154,8 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                 first_capture = db.query(Capture).filter(Capture.id == capture_ids[0]).first()
                 if first_capture and first_capture.device:
                     try:
-                        from content_platform.server.temporal import rebuild_playback_sessions_for_device
+                        from content_platform.server.temporal import rebuild_playback_sessions_for_device, smooth_recent_captures_for_device
+                        smooth_recent_captures_for_device(db, first_capture.device.device_id)
                         rebuild_playback_sessions_for_device(db, first_capture.device.device_id)
                         with open("debug_bg.txt", "a") as f_dbg:
                             f_dbg.write(f"Successfully rebuilt playback sessions for device: {first_capture.device.device_id}\n")
@@ -118,6 +163,10 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                         logger.error("Failed to rebuild playback sessions for device %s: %s", first_capture.device.device_id, se)
                         with open("debug_bg.txt", "a") as f_dbg:
                             f_dbg.write(f"Failed to rebuild sessions: {se}\n")
+            
+            # Broadcast the update event to all active SSE clients
+            if main_loop and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(manager.broadcast({"type": "update"}), main_loop)
         except Exception as e:
             logger.error("Failed to match captures in background: %s", e)
             with open("debug_bg.txt", "a") as f_dbg:
@@ -449,6 +498,10 @@ def resolve_capture(capture_id: int, payload: CaptureResolvePayload, db: Session
     except Exception as se:
         logger.error("Failed to rebuild playback sessions for device %s after resolve: %s", capture.device.device_id, se)
         
+    # Broadcast the update event to all active SSE clients
+    if main_loop and main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(manager.broadcast({"type": "update"}), main_loop)
+        
     return {"status": "resolved", "library_id": library_item.id}
 
 
@@ -632,6 +685,26 @@ def export_captures_csv(db: Session = Depends(get_db)):
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=realtime_captures.csv"}
     )
+
+
+@app.get("/api/v1/events")
+async def sse_endpoint(request: Request):
+    q = await manager.subscribe()
+    
+    async def event_generator():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    data = await asyncio.wait_for(q.get(), timeout=1.0)
+                    yield f"data: {json.dumps(data)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            manager.unsubscribe(q)
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 # Mount static files for dashboard last to avoid blocking API routes

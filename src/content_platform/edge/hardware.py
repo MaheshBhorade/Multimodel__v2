@@ -10,6 +10,22 @@ def discover_audio_device() -> str:
     if env_device:
         return env_device
 
+    # Try PulseAudio / PipeWire first if pactl is available (prevents Device or resource busy errors)
+    try:
+        output = subprocess.check_output(
+            ["pactl", "list", "sources", "short"],
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+        for line in output.splitlines():
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                name = parts[1]
+                if any(token in name.lower() for token in ("video", "usb", "macrosilicon", "c3-1")):
+                    return name
+    except Exception:
+        pass
+
     cards_path = Path("/proc/asound/cards")
     if not cards_path.exists():
         return "default"

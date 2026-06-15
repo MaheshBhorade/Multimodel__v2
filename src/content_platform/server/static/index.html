@@ -150,12 +150,12 @@
               <h3>Real-Time Capture Log</h3>
               <span class="caption">Showing latest 15 captures from all units</span>
             </div>
-            <button id="btn-export-captures" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px;">
+            <a href="/api/v1/captures/export" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px; text-decoration: none;">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
               </svg>
               Export Captures
-            </button>
+            </a>
           </div>
           <div class="table-responsive">
             <table class="data-table" id="captures-table">
@@ -176,6 +176,12 @@
                 <tr><td colspan="8" class="loading-state">Loading latest captures...</td></tr>
               </tbody>
             </table>
+          </div>
+          <!-- Pagination Controls -->
+          <div style="display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 16px; padding: 8px;">
+            <button id="btn-prev-page" class="btn btn-secondary btn-sm" disabled style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass);">Previous</button>
+            <span id="page-indicator" style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">Page 1</span>
+            <button id="btn-next-page" class="btn btn-secondary btn-sm" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass);">Next</button>
           </div>
         </div>
 
@@ -286,12 +292,12 @@
               <h3>Aggregated Playback Sessions (Temporal Engine)</h3>
               <span class="caption">Grouped contiguous playback sessions based on temporal rules (12/10 thresholds)</span>
             </div>
-            <button id="btn-export-sessions" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px;">
+            <a href="/api/v1/analytics/sessions/export" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px; text-decoration: none;">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
               </svg>
               Export Sessions
-            </button>
+            </a>
           </div>
           <div id="analytics-sessions" style="margin-top: 16px;">
             <div class="loading-state">Generating playback sessions report...</div>

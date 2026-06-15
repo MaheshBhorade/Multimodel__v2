@@ -72,11 +72,11 @@ def write_remote_file(sftp: paramiko.SFTPClient, remote_path: str, content: str)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Deploy the content platform edge agent to a Raspberry Pi.")
-    parser.add_argument("--host", required=True)
+    parser.add_argument("--host", default="100.85.114.118")
     parser.add_argument("--user", default="indi")
-    parser.add_argument("--password", required=True)
-    parser.add_argument("--device-id", required=True)
-    parser.add_argument("--server-url", required=True)
+    parser.add_argument("--password", default="iNdI#@R-71!0")
+    parser.add_argument("--device-id", default="pi-agent")
+    parser.add_argument("--server-url", default="http://100.78.128.49:8000")
     parser.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT)
     args = parser.parse_args()
 
@@ -95,7 +95,6 @@ def main() -> None:
                 f"CRP_DEVICE_ID={args.device_id}",
                 "CRP_EDGE_MODE=pi",
                 "CRP_CAPTURE_INTERVAL_SECONDS=10",
-                "CRP_AUDIO_DEVICE=default",
             ]
         )
         write_remote_file(sftp, posixpath.join(args.remote_root, ".env"), env_content)

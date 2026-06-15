@@ -135,6 +135,90 @@ def test_temporal_state_machine_sessions() -> None:
 
         # Cleanup
         db.query(PlaybackSession).filter(PlaybackSession.device_id == device_id).delete()
+        capture_ids = [c.id for c in db.query(Capture).filter(Capture.device_id == device.id).all()]
+        db.query(RecognitionResultRecord).filter(RecognitionResultRecord.capture_id.in_(capture_ids)).delete(synchronize_session=False)
         db.query(Capture).filter(Capture.device_id == device.id).delete()
         db.delete(device)
         db.commit()
+
+
+def test_temporal_smoothing() -> None:
+    from content_platform.server.temporal import smooth_recent_captures_for_device
+
+    with TestSessionLocal() as db:
+        device_id = "TEST_DEVICE_SMOOTHING_99"
+        
+        # Clean up any residual data first
+        db.query(PlaybackSession).filter(PlaybackSession.device_id == device_id).delete()
+        old_device = db.query(Device).filter(Device.device_id == device_id).first()
+        if old_device:
+            db.query(Capture).filter(Capture.device_id == old_device.id).delete()
+            db.delete(old_device)
+        db.commit()
+
+        device = Device(device_id=device_id, status="active")
+        db.add(device)
+        db.flush()
+
+        base_time = datetime.now(UTC)
+
+        # Helper to add a capture with match
+        def add_capture(offset_seconds: int, content_name: str, content_type: str, confidence: float = 0.8) -> RecognitionResultRecord:
+            cap = Capture(
+                device_id=device.id,
+                captured_at=base_time + timedelta(seconds=offset_seconds),
+                visual_fp="[]",
+                audio_fp="[]",
+                status="matched"
+            )
+            db.add(cap)
+            db.flush()
+
+            result = RecognitionResultRecord(
+                capture_id=cap.id,
+                content_name=content_name,
+                content_type=content_type,
+                confidence=confidence,
+                visual_score=confidence,
+                audio_score=confidence,
+                ocr_score=0.0,
+                logo_score=0.0
+            )
+            db.add(result)
+            db.flush()
+            return result
+
+        # Create 10 captures: index 5 is the transient error ("Goyamart Episode 92")
+        records = []
+        for i in range(10):
+            name = "Goyamart Episode 92" if i == 5 else "Goyamart Episode 93"
+            r = add_capture(i * 10, name, "series", confidence=0.7)
+            records.append(r)
+        
+        db.commit()
+
+        # Run smoothing
+        smooth_recent_captures_for_device(db, device_id, window_size=5)
+
+        # Retrieve the updated records
+        db_records = (
+            db.query(RecognitionResultRecord)
+            .join(Capture, Capture.id == RecognitionResultRecord.capture_id)
+            .filter(Capture.device_id == device.id)
+            .order_by(Capture.captured_at.asc())
+            .all()
+        )
+
+        # The record at index 5 should have been smoothed/rounded up to "Goyamart Episode 93"
+        # and confidence boosted to at least 0.85
+        assert db_records[5].content_name == "Goyamart Episode 93"
+        assert db_records[5].confidence >= 0.85
+
+        # Cleanup
+        db.query(PlaybackSession).filter(PlaybackSession.device_id == device_id).delete()
+        capture_ids = [c.id for c in db.query(Capture).filter(Capture.device_id == device.id).all()]
+        db.query(RecognitionResultRecord).filter(RecognitionResultRecord.capture_id.in_(capture_ids)).delete(synchronize_session=False)
+        db.query(Capture).filter(Capture.device_id == device.id).delete()
+        db.delete(device)
+        db.commit()
+

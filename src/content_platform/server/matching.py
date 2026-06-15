@@ -141,7 +141,8 @@ def match_platform(db_platform: Session, payload: FingerprintPayload) -> str:
     matches.sort(key=lambda x: x["score"], reverse=True)
     best_match = matches[0]
     
-    if best_match["score"] >= 0.45:
+    # Increase threshold to 0.65 to avoid false positives during full-screen video playback
+    if best_match["score"] >= 0.65:
         return best_match["platform"]
         
     return "unknown"
@@ -336,47 +337,55 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
     audio_missing = _is_audio_unavailable(payload.audio_fp)
 
     # Use FAISS indexes when available and dimensions match; otherwise fallback to brute‑force.
-    use_faiss = False
-    if visual_index is not None and audio_index is not None and not is_payload_blank and not audio_missing:
-        if payload.visual_fps:
-            if isinstance(payload.visual_fps[0], (list, tuple, np.ndarray)):
-                payload_vis_dim = len(payload.visual_fps[0])
-            else:
-                payload_vis_dim = len(payload.visual_fps)
+    use_faiss_visual = False
+    legacy_payload = False
+    if visual_index is not None and not is_payload_blank and payload.visual_fps:
+        if isinstance(payload.visual_fps[0], (list, tuple, np.ndarray)):
+            payload_vis_dim = len(payload.visual_fps[0])
         else:
-            payload_vis_dim = 0
-            
+            payload_vis_dim = len(payload.visual_fps)
+        if payload_vis_dim == visual_index.dim:
+            use_faiss_visual = True
+        else:
+            legacy_payload = True
+
+    use_faiss_audio = False
+    if audio_index is not None and not audio_missing and payload.audio_fp is not None and not legacy_payload:
         if isinstance(payload.audio_fp, (list, tuple, np.ndarray)):
             payload_aud_dim = len(payload.audio_fp)
         else:
             payload_aud_dim = 0
-            
-        if payload_vis_dim == visual_index.dim and payload_aud_dim == audio_index.dim:
-            use_faiss = True
+        if payload_aud_dim == audio_index.dim:
+            use_faiss_audio = True
+
+    use_faiss = (use_faiss_visual or use_faiss_audio) and not legacy_payload
 
     matches = []
     if use_faiss:
-        # Prepare query vectors
-        if isinstance(payload.visual_fps[0], list):
-            avg_visual = np.mean(np.array(payload.visual_fps, dtype=np.float32), axis=0)
-        else:
-            avg_visual = np.array(payload.visual_fps, dtype=np.float32)
-        audio_vec = np.array(payload.audio_fp, dtype=np.float32)
-        # Search indexes (k=10)
-        visual_results = visual_index.search(avg_visual, k=10)
-        audio_results = audio_index.search(audio_vec, k=10)
-        
         visual_scores = {}
-        for cid, dist in visual_results:
-            sim = 1 / (1 + dist)
-            if cid not in visual_scores or sim > visual_scores[cid]:
-                visual_scores[cid] = sim
+        if use_faiss_visual:
+            # Prepare query vector for visual
+            if isinstance(payload.visual_fps[0], list):
+                avg_visual = np.mean(np.array(payload.visual_fps, dtype=np.float32), axis=0)
+            else:
+                avg_visual = np.array(payload.visual_fps, dtype=np.float32)
+            # Search visual index (k=10)
+            visual_results = visual_index.search(avg_visual, k=10)
+            for cid, dist in visual_results:
+                sim = 1 / (1 + dist)
+                if cid not in visual_scores or sim > visual_scores[cid]:
+                    visual_scores[cid] = sim
 
         audio_scores = {}
-        for cid, dist in audio_results:
-            sim = 1 / (1 + dist)
-            if cid not in audio_scores or sim > audio_scores[cid]:
-                audio_scores[cid] = sim
+        if use_faiss_audio:
+            # Prepare query vector for audio
+            audio_vec = np.array(payload.audio_fp, dtype=np.float32)
+            # Search audio index (k=10)
+            audio_results = audio_index.search(audio_vec, k=10)
+            for cid, dist in audio_results:
+                sim = 1 / (1 + dist)
+                if cid not in audio_scores or sim > audio_scores[cid]:
+                    audio_scores[cid] = sim
                 
         # Combine scores per content
         all_cids = set(visual_scores.keys()) | set(audio_scores.keys())
@@ -398,7 +407,7 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
                 else:
                     combined_score = (vis_sim * 0.70) + (aud_sim * 0.30)
             # Retrieve content object from DB
-            content_obj = db.execute(select(ContentLibrary).where(ContentLibrary.external_content_id == cid)).scalars().first()
+            content_obj = db.scalars(select(ContentLibrary).where(ContentLibrary.external_content_id == cid)).first()
             if content_obj:
                 matches.append({
                     "content": content_obj,
@@ -512,9 +521,9 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
                 content_type = "unknown"
 
         # Adaptive threshold based on available modalities:
-        #   - Visual-only (audio broken):  0.60  (cross-song max is 0.42, safe margin)
-        #   - Full multimodal:             0.75  (standard threshold)
-        match_threshold = 0.60 if audio_missing else 0.75
+        #   - Visual-only or strong visual match (visual >= 0.60): 0.60 (cross-song max is 0.42, safe margin)
+        #   - Full multimodal (standard visual/audio):             0.75
+        match_threshold = 0.60 if (audio_missing or vis_score >= 0.60) else 0.75
 
         if confidence < match_threshold:
             return RecognitionResult(

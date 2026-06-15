@@ -155,21 +155,22 @@ class FingerprintExtractor:
                 self._audio_file = tempfile.mktemp(suffix=".wav")
                 use_parecord = shutil.which("parecord") is not None
                 
-                # Prefer ffmpeg with PulseAudio (PipeWire) for robust capture
+                audio_dev = discover_audio_device()
+                # Prefer ffmpeg with detected format (pulse or alsa) for robust resampling/format conversion
                 if shutil.which("ffmpeg") is not None:
-                    # ffmpeg will handle resampling and format conversion
+                    audio_fmt = "alsa" if (audio_dev.startswith("plughw:") or audio_dev.startswith("hw:")) else "pulse"
                     cmd = [
                         "ffmpeg",
                         "-y",  # overwrite output if exists
-                        "-f", "pulse",
-                        "-i", "default",
+                        "-f", audio_fmt,
+                        "-i", audio_dev,
                         "-t", "10",
                         "-ac", "1",
                         "-ar", "16000",
                         "-acodec", "pcm_s16le",
                         self._audio_file,
                     ]
-                    log_msg = f"Started background audio capture using ffmpeg to {self._audio_file}"
+                    log_msg = f"Started background audio capture using ffmpeg ({audio_fmt}) from {audio_dev} to {self._audio_file}"
                 elif use_parecord:
                     cmd = [
                         "parecord", "--format=s16le", "--rate=16000", "--channels=1",
@@ -177,7 +178,6 @@ class FingerprintExtractor:
                     ]
                     log_msg = f"Started background audio capture using parecord to {self._audio_file}"
                 else:
-                    audio_dev = discover_audio_device()
                     cmd = [
                         "arecord", "-D", audio_dev, "-d", "10",
                         "-f", "S16_LE", "-r", "16000", "-c", "1", self._audio_file
