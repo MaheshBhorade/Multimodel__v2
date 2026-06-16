@@ -301,9 +301,21 @@ function renderActiveTab() {
 }
 
 // Render: OVERVIEW (Real-Time Capture Log)
+function formatTime(secs) {
+  if (secs === null || secs === undefined) return '-';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  return [
+      h > 0 ? h : null,
+      m.toString().padStart(2, '0'),
+      s.toString().padStart(2, '0')
+  ].filter(x => x !== null).join(':');
+}
+
 function renderOverview() {
   if (state.captures.length === 0) {
-    elements.capturesList.innerHTML = '<tr><td colspan="8" class="loading-state">No captures recorded yet. Run crp-edge agent.</td></tr>';
+    elements.capturesList.innerHTML = '<tr><td colspan="9" class="loading-state">No captures recorded yet. Run crp-edge agent.</td></tr>';
     renderTimeline(state.timeline);
     return;
   }
@@ -343,7 +355,39 @@ function renderOverview() {
 
     // Category / Tag
     const category = c.result ? c.result.content_type : 'unknown';
-    const contentName = c.result ? c.result.content_name : 'Unknown Content';
+    
+    // Format content name with structured metadata
+    let contentName = c.result ? c.result.content_name : 'Unknown Content';
+    if (c.result && c.result.series) {
+      let s = (c.result.season !== null && c.result.season !== undefined) ? String(c.result.season).padStart(2, '0') : '';
+      let e = (c.result.episode !== null && c.result.episode !== undefined) ? String(c.result.episode).padStart(2, '0') : '';
+      
+      let baseName = c.result.series;
+      if (s && e) {
+        baseName += ` S${s}E${e}`;
+      } else if (s) {
+        baseName += ` S${s}`;
+      } else if (e) {
+        baseName += ` E${e}`;
+      }
+      
+      let originalName = c.result.content_name || "";
+      let normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/s0+/g, 's').replace(/e0+/g, 'e');
+      
+      if (originalName && originalName !== c.result.series && normalize(originalName) !== normalize(baseName)) {
+        let regSeries = new RegExp('^' + c.result.series.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\s:-]*', 'i');
+        let extra = originalName.replace(regSeries, '');
+        extra = extra.replace(/^s\d+\s*e\d+[\s:-]*/i, '');
+        
+        if (extra) {
+           contentName = baseName + (extra.startsWith('(') ? ' ' : ' - ') + extra;
+        } else {
+           contentName = baseName;
+        }
+      } else {
+        contentName = baseName;
+      }
+    }
     
     // Match breakdown
     const breakdown = c.result ? c.result.breakdown : { visual_score: 0, audio_score: 0, ocr_score: 0, logo_score: 0 };

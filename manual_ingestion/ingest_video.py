@@ -159,11 +159,25 @@ def ingest_single_video(video_path: str, title: str, category: str, channel: str
     if direct:
         print("Ingesting directly into DB and Qdrant store...")
         from content_platform.server.db import SessionLocal
-        from content_platform.server.models import ContentLibrary
+        from content_platform.server.models import Content, ContentSegment
         from content_platform.server.vector_store import vector_store
         
         session = SessionLocal()
         try:
+            from content_platform.server.matching import parse_title_metadata
+            plat_val, chan_val, series_val, season_val, episode_val = parse_title_metadata(title, category)
+            db_content = Content(
+                content_id=content_id,
+                platform_id=channel or plat_val or chan_val,
+                title=title,
+                content_type=category,
+                series_name=series_val,
+                season_number=season_val,
+                episode_number=episode_val
+            )
+            session.add(db_content)
+            session.flush()
+
             for sec in range(0, duration, SEGMENT_SECONDS):
                 # Seek to frame at `sec`
                 frame_number = int(sec * fps)
@@ -188,16 +202,13 @@ def ingest_single_video(video_path: str, title: str, category: str, channel: str
                 logo_fp = [0.0] * 16
                 final_ocr = ocr_keywords if ocr_keywords else title.lower()
                 
-                db_item = ContentLibrary(
-                    external_content_id=content_id,
-                    title=title,
-                    category=category,
-                    channel_name=channel,
+                segment_index = sec // SEGMENT_SECONDS
+                db_item = ContentSegment(
+                    content_id=content_id,
+                    segment_index=segment_index,
                     segment_offset=sec,
                     visual_fp=json.dumps(visual_fp),
-                    audio_fp=json.dumps(audio_fp),
-                    logo_fp=json.dumps(logo_fp),
-                    ocr_keywords=final_ocr,
+                    audio_fp=json.dumps(audio_fp)
                 )
                 session.add(db_item)
                 

@@ -24,10 +24,27 @@ except ImportError:
 
 try:
     from content_platform.server.db import PlatformSessionLocal
-    from content_platform.server.models import PlatformLibrary
+    from content_platform.server.models import PlatformReference
 except ImportError:
     print("Error: Platform database engine and model classes could not be imported.")
     sys.exit(1)
+
+
+def get_platform_info(platform_name: str):
+    platform_id = platform_name.lower().replace(" ", "_").replace("-", "_")
+    info = {
+        "netflix": ("Netflix", "OTT"),
+        "youtube": ("YouTube", "OTT"),
+        "prime_video": ("Prime Video", "OTT"),
+        "sonyliv": ("SonyLIV", "OTT"),
+        "jiohotstar": ("JioHotstar", "OTT"),
+        "zee5": ("Zee5", "OTT"),
+        "sony_max": ("Sony Max", "TV"),
+        "star_gold": ("Star Gold", "TV"),
+        "zee_cinema": ("Zee Cinema", "TV")
+    }
+    name, ptype = info.get(platform_id, (platform_name, "OTT"))
+    return platform_id, name, ptype
 
 
 def ingest_single_image(image_path: str, platform_name: str, offset: int = 0, session=None):
@@ -42,16 +59,19 @@ def ingest_single_image(image_path: str, platform_name: str, offset: int = 0, se
             raise RuntimeError(f"Could not load image: {image_path}")
             
         visual_fp = DeepEmbeddingsExtractor.extract_visual(frame)
+        platform_id, plat_name, plat_type = get_platform_info(platform_name)
         
-        db_item = PlatformLibrary(
-            platform_name=platform_name,
-            segment_offset=offset,
-            visual_fp=json.dumps(visual_fp)
+        db_item = PlatformReference(
+            platform_id=platform_id,
+            platform_name=plat_name,
+            platform_type=plat_type,
+            visual_fp=json.dumps(visual_fp),
+            ocr_keywords=""
         )
         session.add(db_item)
         if close_session:
             session.commit()
-            print(f"Ingested image: {image_path} -> {platform_name} (@ {offset}s)")
+            print(f"Ingested image: {image_path} -> {plat_name} (ID: {platform_id})")
     except Exception as e:
         if close_session:
             session.rollback()
@@ -80,6 +100,7 @@ def ingest_platform_video(video_path: str, platform_name: str, interval: int = 1
     print(f"Video FPS: {fps:.2f}, Duration: {duration} seconds")
     
     inserted = 0
+    platform_id, plat_name, plat_type = get_platform_info(platform_name)
     try:
         for sec in range(0, duration, interval):
             frame_number = int(sec * fps)
@@ -90,10 +111,12 @@ def ingest_platform_video(video_path: str, platform_name: str, interval: int = 1
                 
             visual_fp = DeepEmbeddingsExtractor.extract_visual(frame)
             
-            db_item = PlatformLibrary(
-                platform_name=platform_name,
-                segment_offset=sec,
-                visual_fp=json.dumps(visual_fp)
+            db_item = PlatformReference(
+                platform_id=platform_id,
+                platform_name=plat_name,
+                platform_type=plat_type,
+                visual_fp=json.dumps(visual_fp),
+                ocr_keywords=""
             )
             session.add(db_item)
             inserted += 1

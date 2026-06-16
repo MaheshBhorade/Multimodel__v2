@@ -1,6 +1,6 @@
 import logging
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from content_platform.server.models import Capture, RecognitionResultRecord, Device, PlaybackSession
 
@@ -180,6 +180,7 @@ def smooth_recent_captures_for_device(db: Session, device_id: str, window_size: 
             db.query(RecognitionResultRecord)
             .join(Capture, Capture.id == RecognitionResultRecord.capture_id)
             .join(Device, Device.id == Capture.device_id)
+            .options(joinedload(RecognitionResultRecord.capture))
             .filter(Device.device_id == device_id)
             .order_by(Capture.captured_at.desc())
             .limit(40)
@@ -247,8 +248,8 @@ def smooth_recent_captures_for_device(db: Session, device_id: str, window_size: 
                     boosted_conf = max(center.confidence, avg_conf, 0.85)
                     
                     logger.info(
-                        "Smoothing transient match at %s: '%s' -> '%s' (confidence boosted to %.2f)",
-                        center.capture.captured_at,
+                        "Smoothing transient match (capture_id=%d): '%s' -> '%s' (confidence boosted to %.2f)",
+                        center.capture_id,
                         center.content_name,
                         dominant_name,
                         boosted_conf

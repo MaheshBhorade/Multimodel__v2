@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 from pathlib import Path
 from content_platform.server.faiss_index import FAISSIndex
-from content_platform.server.models import ContentLibrary, PlatformLibrary
+from content_platform.server.models import Content, ContentSegment, PlatformReference
 from content_platform.shared.models import FingerprintPayload, MatchBreakdown, RecognitionResult
 
 import numpy as np
@@ -31,9 +31,51 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def parse_title_metadata(title: str, category: str):
+    """
+    Parses a title string to extract platform, channel, series, season, and episode.
+    e.g., 'Goyamart Episode 94' -> series='Goyamart', episode=94
+    """
+    import re
+    series = None
+    season = None
+    episode = None
+    platform = None
+    channel = None
+    
+    title_lower = title.lower()
+    
+    if category == "channel":
+        channel = title
+    elif category == "platform":
+        platform = title
+        
+    se_match = re.search(r's(\d+)\s*e(\d+)', title_lower)
+    if se_match:
+        season = int(se_match.group(1))
+        episode = int(se_match.group(2))
+        series = title[:se_match.start()].strip(" -_")
+    else:
+        ep_match = re.search(r'(?:episode|ep|ep\.)\s*(\d+)', title_lower)
+        if ep_match:
+            episode = int(ep_match.group(1))
+            series = title[:ep_match.start()].strip(" -_")
+            
+        s_match = re.search(r'(?:season|s)\s*(\d+)', title_lower)
+        if s_match:
+            season = int(s_match.group(1))
+            if not series:
+                series = title[:s_match.start()].strip(" -_")
+                
+    if not series:
+        series = title
+        
+    return platform, channel, series, season, episode
+
+
 def initialize_platform_faiss_index(db_platform: Session) -> None:
     global platform_visual_index
-    db_count = db_platform.query(PlatformLibrary).count()
+    db_count = db_platform.query(PlatformReference).count()
     if platform_visual_index is not None:
         if len(platform_visual_index.id_to_content) == db_count and platform_visual_index.dim == FAISS_VISUAL_DIM:
             return
@@ -53,17 +95,22 @@ def initialize_platform_faiss_index(db_platform: Session) -> None:
             logger.warning(f"Failed to load Platform FAISS index from disk: {e}. Rebuilding...")
 
     # Rebuild from database
-    logger.info("Rebuilding Platform FAISS index from database PlatformLibrary...")
+    logger.info("Rebuilding Platform FAISS index from database PlatformReference...")
     try:
         vis_idx = FAISSIndex(dim=FAISS_VISUAL_DIM, gpu=True)
-        items = db_platform.query(PlatformLibrary).all()
+        items = db_platform.query(PlatformReference).all()
         logger.info(f"Found {len(items)} platform library items in DB.")
         
         for item in items:
             try:
                 vis_fp = json.loads(item.visual_fp)
                 if len(vis_fp) == FAISS_VISUAL_DIM:
-                    vis_idx.add(np.array(vis_fp, dtype=np.float32).reshape(1, -1), [item.platform_name])
+                    meta = {
+                        "platform_id": item.platform_id,
+                        "platform_name": item.platform_name,
+                        "platform_type": item.platform_type
+                    }
+                    vis_idx.add(np.array(vis_fp, dtype=np.float32).reshape(1, -1), [meta])
             except Exception as e:
                 logger.warning(f"Failed to add platform item {item.id} to FAISS index: {e}")
                 
@@ -105,16 +152,17 @@ def match_platform(db_platform: Session, payload: FingerprintPayload) -> str:
         for frame in frames_to_search:
             frame_arr = np.array(frame, dtype=np.float32)
             visual_results = platform_visual_index.search(frame_arr, k=5)
-            for platform_name, dist in visual_results:
-                sim = 1 / (1 + dist)
-                if platform_name not in visual_scores or sim > visual_scores[platform_name]:
-                    visual_scores[platform_name] = sim
+            for res in visual_results:
+                platform_id = res["content_id"]
+                sim = res["score"]
+                if platform_id not in visual_scores or sim > visual_scores[platform_id]:
+                    visual_scores[platform_id] = sim
                 
-        for platform_name, score in visual_scores.items():
-            matches.append({"platform": platform_name, "score": score})
+        for platform_id, score in visual_scores.items():
+            matches.append({"platform": platform_id, "score": score})
     else:
         # Brute force fallback
-        items = db_platform.query(PlatformLibrary).all()
+        items = db_platform.query(PlatformReference).all()
         if not items:
             return "unknown"
             
@@ -133,7 +181,7 @@ def match_platform(db_platform: Session, payload: FingerprintPayload) -> str:
                 ]
                 sim = max(similarities) if similarities else 0.0
                 
-            matches.append({"platform": item.platform_name, "score": sim})
+            matches.append({"platform": item.platform_id, "score": sim})
             
     if not matches:
         return "unknown"
@@ -150,7 +198,7 @@ def match_platform(db_platform: Session, payload: FingerprintPayload) -> str:
 
 def initialize_faiss_indexes(db: Session) -> None:
     global visual_index, audio_index
-    db_count = db.query(ContentLibrary).count()
+    db_count = db.query(ContentSegment).count()
     if visual_index is not None and audio_index is not None:
         if len(visual_index.id_to_content) == db_count and visual_index.dim == FAISS_VISUAL_DIM and audio_index.dim == FAISS_AUDIO_DIM:
             return
@@ -173,24 +221,29 @@ def initialize_faiss_indexes(db: Session) -> None:
             logger.warning(f"Failed to load FAISS indexes from disk: {e}. Rebuilding from database...")
 
     # Rebuild from database
-    logger.info("Rebuilding FAISS indexes from database ContentLibrary...")
+    logger.info("Rebuilding FAISS indexes from database ContentSegment...")
     try:
         vis_idx = FAISSIndex(dim=FAISS_VISUAL_DIM, gpu=True)
         aud_idx = FAISSIndex(dim=FAISS_AUDIO_DIM, gpu=True)
         
-        items = db.query(ContentLibrary).all()
+        items = db.query(ContentSegment).all()
         logger.info(f"Found {len(items)} library items in DB.")
         
         for item in items:
             try:
                 vis_fp = json.loads(item.visual_fp)
                 aud_fp = json.loads(item.audio_fp)
+                meta = {
+                    "content_id": item.content_id,
+                    "segment_index": item.segment_index,
+                    "segment_offset": item.segment_offset
+                }
                 if len(vis_fp) == FAISS_VISUAL_DIM:
-                    vis_idx.add(np.array(vis_fp, dtype=np.float32).reshape(1, -1), [item.external_content_id])
+                    vis_idx.add(np.array(vis_fp, dtype=np.float32).reshape(1, -1), [meta])
                 if len(aud_fp) == FAISS_AUDIO_DIM:
-                    aud_idx.add(np.array(aud_fp, dtype=np.float32).reshape(1, -1), [item.external_content_id])
+                    aud_idx.add(np.array(aud_fp, dtype=np.float32).reshape(1, -1), [meta])
             except Exception as e:
-                logger.warning(f"Failed to add item {item.id} to FAISS index: {e}")
+                logger.warning(f"Failed to add item {item.segment_id} to FAISS index: {e}")
                 
         vis_idx.save(str(VISUAL_INDEX_PATH), str(VISUAL_META_PATH))
         aud_idx.save(str(AUDIO_INDEX_PATH), str(AUDIO_META_PATH))
@@ -202,7 +255,7 @@ def initialize_faiss_indexes(db: Session) -> None:
         logger.error(f"Error rebuilding FAISS indexes: {e}")
 
 
-from content_platform.server.models import ContentLibrary
+from content_platform.server.models import Content, ContentSegment
 from content_platform.shared.models import FingerprintPayload, MatchBreakdown, RecognitionResult
 
 
@@ -323,7 +376,9 @@ def _is_audio_unavailable(audio_fp) -> bool:
     return True
 
 
-def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult:
+def match_content(db: Session, payload: FingerprintPayload, platform_id: str = "unknown") -> RecognitionResult:
+    from content_platform.server.models import Capture, RecognitionResultRecord, Device
+    
     # Check if more than 50% of the payload frames are blank/lost video signal (like a green screen)
     is_payload_blank = False
     if payload.visual_fps:
@@ -360,9 +415,41 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
 
     use_faiss = (use_faiss_visual or use_faiss_audio) and not legacy_payload
 
-    matches = []
+    # Look up the last RecognitionResultRecord for this device
+    last_record = None
+    device = db.query(Device).filter(Device.device_id == payload.device_id).first()
+    if device:
+        last_record = (
+            db.query(RecognitionResultRecord)
+            .join(Capture, Capture.id == RecognitionResultRecord.capture_id)
+            .filter(Capture.device_id == device.id)
+            .order_by(Capture.captured_at.desc())
+            .first()
+        )
+        
+    last_content_id = None
+    last_offset = None
+    last_captured_at = None
+    if last_record and last_record.capture:
+        if last_record.capture.result and last_record.capture.result.content_id:
+            last_content_id = last_record.capture.result.content_id
+            last_offset = last_record.playback_position
+            last_captured_at = last_record.capture.captured_at
+
+    visual_scores = {}
+    audio_scores = {}
+
+    # Query allowed content IDs for this platform (including global/platform-agnostic content)
+    allowed_content_ids = set()
+    if platform_id and platform_id != "unknown":
+        allowed_content_ids = {
+            c.content_id 
+            for c in db.query(Content.content_id)
+            .filter((Content.platform_id == platform_id) | (Content.platform_id == "global") | (Content.platform_id == None))
+            .all()
+        }
+
     if use_faiss:
-        visual_scores = {}
         if use_faiss_visual:
             # Prepare query vector for visual
             if isinstance(payload.visual_fps[0], list):
@@ -371,74 +458,44 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
                 avg_visual = np.array(payload.visual_fps, dtype=np.float32)
             # Search visual index (k=10)
             visual_results = visual_index.search(avg_visual, k=10)
-            for cid, dist in visual_results:
-                sim = 1 / (1 + dist)
-                if cid not in visual_scores or sim > visual_scores[cid]:
-                    visual_scores[cid] = sim
+            for res in visual_results:
+                if allowed_content_ids and res["content_id"] not in allowed_content_ids:
+                    continue
+                key = (res["content_id"], res["segment_offset"])
+                sim = res["score"]
+                if key not in visual_scores or sim > visual_scores[key]:
+                    visual_scores[key] = sim
 
-        audio_scores = {}
         if use_faiss_audio:
             # Prepare query vector for audio
             audio_vec = np.array(payload.audio_fp, dtype=np.float32)
             # Search audio index (k=10)
             audio_results = audio_index.search(audio_vec, k=10)
-            for cid, dist in audio_results:
-                sim = 1 / (1 + dist)
-                if cid not in audio_scores or sim > audio_scores[cid]:
-                    audio_scores[cid] = sim
-                
-        # Combine scores per content
-        all_cids = set(visual_scores.keys()) | set(audio_scores.keys())
-        for cid in all_cids:
-            vis_sim = visual_scores.get(cid, 0.0)
-            aud_sim = audio_scores.get(cid, 0.0)
-            # Adaptive scoring same as original logic
-            if is_payload_blank and not audio_missing:
-                combined_score = aud_sim
-            elif is_payload_blank and audio_missing:
-                combined_score = 0.0
-            elif audio_missing:
-                combined_score = vis_sim
-            else:
-                if vis_sim >= 0.75:
-                    combined_score = vis_sim
-                elif vis_sim >= 0.60 and aud_sim >= 0.10:
-                    combined_score = max(vis_sim, (vis_sim * 0.70) + (aud_sim * 0.30))
-                else:
-                    combined_score = (vis_sim * 0.70) + (aud_sim * 0.30)
-            # Retrieve content object from DB
-            content_obj = db.scalars(select(ContentLibrary).where(ContentLibrary.external_content_id == cid)).first()
-            if content_obj:
-                matches.append({
-                    "content": content_obj,
-                    "score": combined_score,
-                    "visual_score": vis_sim,
-                    "audio_score": aud_sim,
-                })
+            for res in audio_results:
+                if allowed_content_ids and res["content_id"] not in allowed_content_ids:
+                    continue
+                key = (res["content_id"], res["segment_offset"])
+                sim = res["score"]
+                if key not in audio_scores or sim > audio_scores[key]:
+                    audio_scores[key] = sim
     else:
-        # Fetch all segments from DB only for brute‑force fallback
-        contents = db.scalars(select(ContentLibrary)).all()
-        if not contents:
-            return RecognitionResult(
-                content_name="Unknown Content",
-                content_type="unknown",
-                confidence=0.0,
-                breakdown=MatchBreakdown(visual_score=0.0, audio_score=0.0, ocr_score=0.0, logo_score=0.0),
-                matched_channel=None,
-            )
+        # Fallback to brute‑force method
+        if allowed_content_ids:
+            segments = db.query(ContentSegment).filter(ContentSegment.content_id.in_(allowed_content_ids)).all()
+        else:
+            segments = db.query(ContentSegment).all()
 
-        # Fallback to original brute‑force method
-        for content in contents:
-            # Load library vectors
+        for segment in segments:
+            key = (segment.content_id, segment.segment_offset)
             try:
-                lib_visual = json.loads(content.visual_fp)
+                lib_visual = json.loads(segment.visual_fp)
             except Exception:
                 lib_visual = []
             
             try:
-                lib_audio = json.loads(content.audio_fp)
+                lib_audio = json.loads(segment.audio_fp)
             except Exception:
-                lib_audio = content.audio_fp  # String fallback
+                lib_audio = segment.audio_fp
 
             # Visual similarity
             if payload.visual_fps and isinstance(payload.visual_fps[0], (int, float)):
@@ -452,27 +509,51 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
 
             # Audio similarity
             aud_sim = audio_similarity(payload.audio_fp, lib_audio)
+            
+            visual_scores[key] = vis_sim
+            audio_scores[key] = aud_sim
 
-            # Adaptive scoring
-            if is_payload_blank and not audio_missing:
-                combined_score = aud_sim
-            elif is_payload_blank and audio_missing:
-                combined_score = 0.0
-            elif audio_missing:
+    # Combine scores per (content_id, segment_offset)
+    all_keys = set(visual_scores.keys()) | set(audio_scores.keys())
+    matches = []
+    for key in all_keys:
+        cid, offset = key
+        vis_sim = visual_scores.get(key, 0.0)
+        aud_sim = audio_scores.get(key, 0.0)
+        
+        # Adaptive scoring
+        if is_payload_blank and not audio_missing:
+            combined_score = aud_sim
+        elif is_payload_blank and audio_missing:
+            combined_score = 0.0
+        elif audio_missing:
+            combined_score = vis_sim
+        else:
+            if vis_sim >= 0.75:
                 combined_score = vis_sim
+            elif vis_sim >= 0.60 and aud_sim >= 0.10:
+                combined_score = max(vis_sim, (vis_sim * 0.70) + (aud_sim * 0.30))
             else:
-                if vis_sim >= 0.75:
-                    combined_score = vis_sim
-                elif vis_sim >= 0.60 and aud_sim >= 0.10:
-                    combined_score = max(vis_sim, (vis_sim * 0.70) + (aud_sim * 0.30))
-                else:
-                    combined_score = (vis_sim * 0.70) + (aud_sim * 0.30)
+                combined_score = (vis_sim * 0.70) + (aud_sim * 0.30)
 
+        # Apply temporal progression boost
+        is_continuous = False
+        if last_content_id and cid == last_content_id and last_offset is not None and last_captured_at is not None:
+            delta_time = (payload.timestamp - last_captured_at).total_seconds()
+            expected_offset = last_offset + delta_time
+            if abs(offset - expected_offset) <= 15:
+                combined_score = min(1.0, combined_score + 0.15)
+                is_continuous = True
+
+        content_obj = db.scalars(select(Content).where(Content.content_id == cid).limit(1)).first()
+        if content_obj:
             matches.append({
-                "content": content,
+                "content": content_obj,
                 "score": combined_score,
                 "visual_score": vis_sim,
                 "audio_score": aud_sim,
+                "segment_offset": offset,
+                "is_continuous": is_continuous
             })
 
     # Sort matches by score descending
@@ -481,38 +562,39 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
     # Take top 10 matches
     top_10 = matches[:10]
 
-    # Group by external_content_id
+    # Group by (content_id, segment_offset)
     votes = {}
     for m in top_10:
-        cid = m["content"].external_content_id
-        if cid not in votes:
-            votes[cid] = []
-        votes[cid].append(m)
+        key = (m["content"].content_id, m["segment_offset"])
+        if key not in votes:
+            votes[key] = []
+        votes[key].append(m)
 
-    # Segment Voting: choose winner prioritizing max individual score first, using vote count as a tie-breaker
-    winner_cid = None
+    # Segment-level voting
+    winner_key = None
     max_votes = -1
     best_winner_score = -1
 
-    for cid, group_matches in votes.items():
+    for key, group_matches in votes.items():
         vote_count = len(group_matches)
         group_max_score = max(m["score"] for m in group_matches)
         if group_max_score > best_winner_score or (abs(group_max_score - best_winner_score) < 1e-9 and vote_count > max_votes):
             max_votes = vote_count
-            winner_cid = cid
+            winner_key = key
             best_winner_score = group_max_score
 
     # Construct final result
-    if winner_cid is not None:
-        winning_group = votes[winner_cid]
+    if winner_key is not None:
+        winning_group = votes[winner_key]
         best_match = max(winning_group, key=lambda x: x["score"])
         content = best_match["content"]
         confidence = best_match["score"]
         vis_score = best_match["visual_score"]
         aud_score = best_match["audio_score"]
+        playback_pos = float(best_match["segment_offset"])
 
-        # Map "song" or other custom categories to valid Pydantic type Literal
-        content_type = content.category
+        # Map custom categories to valid Pydantic type Literal
+        content_type = content.content_type
         allowed_types = ["channel", "advertisement", "movie", "series", "episode", "ott", "music", "unknown"]
         if content_type not in allowed_types:
             if content_type == "song":
@@ -520,10 +602,12 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
             else:
                 content_type = "unknown"
 
-        # Adaptive threshold based on available modalities:
-        #   - Visual-only or strong visual match (visual >= 0.60): 0.60 (cross-song max is 0.42, safe margin)
-        #   - Full multimodal (standard visual/audio):             0.75
+        # Adaptive threshold based on available modalities
         match_threshold = 0.60 if (audio_missing or vis_score >= 0.60) else 0.75
+        
+        # Lower threshold for continuous progression to improve stabilization
+        if best_match.get("is_continuous"):
+            match_threshold = 0.50
 
         if confidence < match_threshold:
             return RecognitionResult(
@@ -537,10 +621,38 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
                     logo_score=0.0
                 ),
                 matched_channel=None,
+                playback_position=None
             )
 
+        # Check for shared intro/outro across different episodes of the same series
+        if content_type == "series" and content.series_name:
+            matching_episodes = set()
+            for m in matches:
+                if m["score"] >= 0.55 and m["content"].content_type == "series" and m["content"].series_name == content.series_name:
+                    if m["content"].episode_number is not None:
+                        matching_episodes.add(m["content"].episode_number)
+            if len(matching_episodes) >= 3:
+                return RecognitionResult(
+                    content_id=f"series-{content.series_name.lower().replace(' ', '_')}-generic",
+                    content_name=f"{content.series_name} (Intro)",
+                    content_type="series",
+                    confidence=confidence,
+                    breakdown=MatchBreakdown(
+                        visual_score=vis_score,
+                        audio_score=aud_score,
+                        ocr_score=0.0,
+                        logo_score=0.0
+                    ),
+                    matched_channel=None,
+                    playback_position=None,
+                    platform=content.platform_id,
+                    series=content.series_name,
+                    season=None,
+                    episode=None
+                )
+
         return RecognitionResult(
-            content_id=content.external_content_id,
+            content_id=content.content_id,
             content_name=content.title,
             content_type=content_type,
             confidence=confidence,
@@ -550,7 +662,12 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
                 ocr_score=0.0,
                 logo_score=0.0
             ),
-            matched_channel=content.channel_name,
+            matched_channel=None,
+            playback_position=playback_pos,
+            platform=content.platform_id,
+            series=content.series_name,
+            season=content.season_number,
+            episode=content.episode_number
         )
 
     # No winner found
@@ -560,4 +677,5 @@ def match_content(db: Session, payload: FingerprintPayload) -> RecognitionResult
         confidence=0.0,
         breakdown=MatchBreakdown(visual_score=0.0, audio_score=0.0, ocr_score=0.0, logo_score=0.0),
         matched_channel=None,
+        playback_position=None
     )

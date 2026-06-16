@@ -39,6 +39,11 @@ class RecognitionResult(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     breakdown: MatchBreakdown
     matched_channel: str | None = None
+    playback_position: float | None = None
+    platform: str | None = None
+    series: str | None = None
+    season: int | None = None
+    episode: int | None = None
 
 
 class CaptureResponse(BaseModel):

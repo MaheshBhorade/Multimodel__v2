@@ -36,7 +36,7 @@ def test_list_captures() -> None:
             json={
                 "device_id": "PI001",
                 "timestamp": datetime.now(UTC).isoformat(),
-                "visual_fps": [[0.01] * 256] * 10,
+                "visual_fps": [[0.01] * 960] * 10,
                 "audio_fp": [0.05] * 130,
                 "snapshot_url": "http://localhost/snapshot.jpg",
             },
@@ -59,7 +59,7 @@ def test_library_crud_endpoints() -> None:
             "title": "Test Channel",
             "category": "channel",
             "channel_name": "Test Network",
-            "visual_fp": [0.1] * 256,
+            "visual_fp": [0.1] * 960,
             "audio_fp": [0.2] * 130,
             "logo_fp": [0.5] * 128,
             "ocr_keywords": "test channel live broadcast"
@@ -99,7 +99,7 @@ def test_resolve_capture() -> None:
             json={
                 "device_id": "TEST_PI_001",
                 "timestamp": datetime.now(UTC).isoformat(),
-                "visual_fps": [[0.01] * 256] * 10,
+                "visual_fps": [[0.01] * 960] * 10,
                 "audio_fp": [0.05] * 130,
                 "snapshot_url": "http://localhost/snapshots/test.jpg"
             }

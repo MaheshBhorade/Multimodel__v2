@@ -26,7 +26,7 @@ class FAISSIndex:
                 
         self.id_to_content = []
 
-    def add(self, vectors: np.ndarray, content_ids: list[str]) -> None:
+    def add(self, vectors: np.ndarray, content_ids: list) -> None:
         if vectors.dtype != np.float32:
             vectors = vectors.astype(np.float32)
             
@@ -34,7 +34,7 @@ class FAISSIndex:
             self.index.add(vectors)
             self.id_to_content.extend(content_ids)
 
-    def search(self, query: np.ndarray, k: int = 5) -> list[tuple[str, float]]:
+    def search(self, query: np.ndarray, k: int = 5) -> list[dict]:
         if query.ndim == 1:
             query = query.reshape(1, -1)
             
@@ -45,7 +45,23 @@ class FAISSIndex:
         for dist, idx in zip(distances[0], ids[0]):
             if idx < 0 or idx >= len(self.id_to_content):
                 continue
-            results.append((self.id_to_content[int(idx)], float(dist)))
+            meta = self.id_to_content[int(idx)]
+            sim = 1 / (1 + float(dist))
+            
+            if isinstance(meta, dict):
+                results.append({
+                    "content_id": meta.get("content_id") or meta.get("platform_id") or meta.get("external_content_id"),
+                    "segment_index": meta.get("segment_index", 0),
+                    "segment_offset": meta.get("segment_offset", 0),
+                    "score": sim
+                })
+            else:
+                results.append({
+                    "content_id": str(meta),
+                    "segment_index": 0,
+                    "segment_offset": 0,
+                    "score": sim
+                })
             
         return results
 

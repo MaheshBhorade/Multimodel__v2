@@ -5,16 +5,16 @@ from fastapi.testclient import TestClient
 
 from content_platform.server.main import app
 from content_platform.server.db import SessionLocal
-from content_platform.server.models import ContentLibrary
+from content_platform.server.models import Content, ContentSegment
 
 
 def test_ingest_capture_returns_recognition_result() -> None:
     # Get a real segment from the database to ensure we get a match
     with SessionLocal() as db:
-        segment = next(item for item in db.query(ContentLibrary) if any(x != 0.0 for x in json.loads(item.visual_fp)))
-        assert segment is not None, "ContentLibrary should have seeded segments"
+        segment = next(item for item in db.query(ContentSegment).join(Content, Content.content_id == ContentSegment.content_id) if any(x != 0.0 for x in json.loads(item.visual_fp)))
+        assert segment is not None, "ContentSegment should have seeded segments"
         
-        ref_title = segment.title
+        ref_title = segment.content.title
         ref_visual = json.loads(segment.visual_fp)
         ref_audio = json.loads(segment.audio_fp)
 
@@ -38,8 +38,10 @@ def test_ingest_capture_returns_recognition_result() -> None:
         caps = client.get("/api/v1/captures").json()["items"]
         latest = next(c for c in caps if c["id"] == body["capture_id"])
         
-        # Should match the reference song name
-        assert latest["result"]["content_name"] == ref_title
+        # Should match the reference content title or its series intro name
+        matched_name = latest["result"]["content_name"]
+        expected_generic = f"{segment.content.series_name} (Intro)" if segment.content.series_name else None
+        assert matched_name == ref_title or (expected_generic and matched_name == expected_generic)
         assert latest["result"]["confidence"] >= 0.8
 
 

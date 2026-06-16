@@ -3,7 +3,7 @@ import numpy as np
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from content_platform.server.db import PlatformBase
-from content_platform.server.models import PlatformLibrary
+from content_platform.server.models import PlatformReference
 from content_platform.server.matching import match_platform
 from content_platform.shared.models import FingerprintPayload
 from datetime import datetime
@@ -31,14 +31,16 @@ def test_platform_matching():
     netflix_vec = [0.0] * 960
     netflix_vec[20] = 1.0
     
-    session.add(PlatformLibrary(
+    session.add(PlatformReference(
+        platform_id="youtube",
         platform_name="YouTube",
-        segment_offset=0,
+        platform_type="OTT",
         visual_fp=json.dumps(youtube_vec)
     ))
-    session.add(PlatformLibrary(
+    session.add(PlatformReference(
+        platform_id="netflix",
         platform_name="Netflix",
-        segment_offset=0,
+        platform_type="OTT",
         visual_fp=json.dumps(netflix_vec)
     ))
     session.commit()
@@ -52,7 +54,7 @@ def test_platform_matching():
     )
     
     result_youtube = match_platform(session, payload_youtube)
-    assert result_youtube == "YouTube"
+    assert result_youtube == "youtube"
     
     # 4. Test matching Netflix layout
     payload_netflix = FingerprintPayload(
@@ -63,7 +65,7 @@ def test_platform_matching():
     )
     
     result_netflix = match_platform(session, payload_netflix)
-    assert result_netflix == "Netflix"
+    assert result_netflix == "netflix"
     
     # 5. Test matching an unknown layout (orthogonal vector)
     unknown_vec = [0.0] * 960

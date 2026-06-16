@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from content_platform.server.db import Base, SessionLocal, engine, get_db, PlatformBase, platform_engine, PlatformSessionLocal
 from content_platform.server.library import seed_reference_library
 from content_platform.server.matching import match_content, initialize_faiss_indexes, match_platform, initialize_platform_faiss_index
-from content_platform.server.models import Capture, Device, RecognitionResultRecord, ContentLibrary, PlaybackSession
+from content_platform.server.models import Capture, Device, RecognitionResultRecord, Content, ContentSegment, PlaybackSession
 from content_platform.shared.config import get_settings
 from content_platform.shared.models import CaptureResponse, FingerprintPayload, SnapshotUploadResponse
 
@@ -47,6 +47,15 @@ manager = ConnectionManager()
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     global main_loop
     main_loop = asyncio.get_running_loop()
+    
+    # Configure SQLite journal mode to WAL once at startup
+    if settings.database_url.startswith("sqlite"):
+        with engine.connect() as conn:
+            conn.exec_driver_sql("PRAGMA journal_mode=WAL")
+    if settings.platform_database_url.startswith("sqlite"):
+        with platform_engine.connect() as conn:
+            conn.exec_driver_sql("PRAGMA journal_mode=WAL")
+            
     Base.metadata.create_all(bind=engine)
     PlatformBase.metadata.create_all(bind=platform_engine)
     SNAPSHOT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -118,12 +127,12 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                     confidence_audio=payload.confidence_audio
                 )
                 
-                result = match_content(db, single_payload)
                 matched_plat = match_platform(db_platform, single_payload)
                 if matched_plat == "unknown":
                     matched_plat = last_known_platform
                 else:
                     last_known_platform = matched_plat
+                result = match_content(db, single_payload, platform_id=matched_plat)
 
                 with open("debug_bg.txt", "a") as f_dbg:
                     f_dbg.write(f"Matched capture {capture_id} to: {result.content_name} ({result.content_type}) | Platform: {matched_plat}\n")
@@ -131,6 +140,7 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                 # Add recognition record
                 record = RecognitionResultRecord(
                     capture_id=capture.id,
+                    content_id=result.content_id,
                     content_name=result.content_name,
                     content_type=result.content_type,
                     confidence=result.confidence,
@@ -138,7 +148,12 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                     audio_score=result.breakdown.audio_score,
                     ocr_score=result.breakdown.ocr_score,
                     logo_score=result.breakdown.logo_score,
-                    matched_platform=matched_plat,
+                    matched_platform=result.platform or matched_plat,
+                    matched_channel=result.matched_channel,
+                    series=result.series,
+                    season=result.season,
+                    episode=result.episode,
+                    playback_position=result.playback_position,
                 )
                 db.add(record)
                 
@@ -327,6 +342,11 @@ def list_captures(
                     "content_type": c.result.content_type,
                     "confidence": c.result.confidence,
                     "matched_platform": c.result.matched_platform,
+                    "matched_channel": c.result.matched_channel,
+                    "series": c.result.series,
+                    "season": c.result.season,
+                    "episode": c.result.episode,
+                    "playback_position": c.result.playback_position,
                     "breakdown": {
                         "visual_score": c.result.visual_score,
                         "audio_score": c.result.audio_score,
@@ -342,21 +362,69 @@ def list_captures(
 
 @app.get("/api/v1/library")
 def list_library(db: Session = Depends(get_db)):
-    items = db.query(ContentLibrary).all()
-    return [
-        {
-            "id": item.id,
-            "external_content_id": item.external_content_id,
-            "title": item.title,
-            "category": item.category,
-            "channel_name": item.channel_name,
-            "visual_fp": json.loads(item.visual_fp) if item.visual_fp else [],
-            "logo_fp": json.loads(item.logo_fp) if item.logo_fp else [],
-            "audio_fp": json.loads(item.audio_fp) if item.audio_fp else [],
-            "ocr_keywords": item.ocr_keywords,
-        }
-        for item in items
-    ]
+    from sqlalchemy.sql import func
+    
+    # Query all Content items
+    contents = db.query(Content).all()
+    content_map = {c.content_id: c for c in contents}
+    
+    # Query minimum segment_id per content_id
+    min_ids_query = select(func.min(ContentSegment.segment_id)).group_by(ContentSegment.content_id)
+    min_ids = db.scalars(min_ids_query).all()
+    
+    # Fetch minimum segment metadata only (avoiding loading full ORM objects and huge strings)
+    segments_query = (
+        select(
+            ContentSegment.segment_id,
+            ContentSegment.content_id,
+            ContentSegment.visual_fp,
+            ContentSegment.audio_fp
+        )
+        .where(ContentSegment.segment_id.in_(min_ids))
+    )
+    segments = db.execute(segments_query).all()
+    
+    results = []
+    for seg_id, content_id, visual_fp_str, audio_fp_str in segments:
+        content = content_map.get(content_id)
+        if not content:
+            continue
+            
+        # Parse first few characters to extract the first 4 floats efficiently
+        try:
+            prefix = visual_fp_str[:120].rsplit(',', 1)[0] + ']'
+            visual_fp = json.loads(prefix)[:4]
+        except Exception:
+            try:
+                visual_fp = json.loads(visual_fp_str)[:4] if visual_fp_str else []
+            except Exception:
+                visual_fp = []
+                
+        try:
+            prefix = audio_fp_str[:120].rsplit(',', 1)[0] + ']'
+            audio_fp = json.loads(prefix)[:4]
+        except Exception:
+            try:
+                audio_fp = json.loads(audio_fp_str)[:4] if audio_fp_str else []
+            except Exception:
+                audio_fp = []
+                
+        results.append({
+            "id": seg_id,
+            "external_content_id": content_id,
+            "title": content.title,
+            "category": content.content_type,
+            "channel_name": content.platform_id,
+            "visual_fp": visual_fp,
+            "logo_fp": [],
+            "audio_fp": audio_fp,
+            "ocr_keywords": "",
+            "platform": content.platform_id,
+            "series": content.series_name,
+            "season": content.season_number,
+            "episode": content.episode_number,
+        })
+    return results
 
 
 class LibraryCreatePayload(BaseModel):
@@ -372,49 +440,76 @@ class LibraryCreatePayload(BaseModel):
 @app.post("/api/v1/library")
 def create_library_item(payload: LibraryCreatePayload, db: Session = Depends(get_db)):
     from content_platform.server.vector_store import vector_store
+    from content_platform.server.matching import parse_title_metadata
+    plat_val, chan_val, series_val, season_val, episode_val = parse_title_metadata(payload.title, payload.category)
+    
     external_content_id = f"{payload.category}-{str(uuid.uuid4())[:8]}"
-    item = ContentLibrary(
-        external_content_id=external_content_id,
+    content = Content(
+        content_id=external_content_id,
         title=payload.title,
-        category=payload.category,
-        channel_name=payload.channel_name,
+        content_type=payload.category,
+        platform_id=payload.channel_name or plat_val or chan_val,
+        series_name=series_val,
+        season_number=season_val,
+        episode_number=episode_val
+    )
+    db.add(content)
+    db.flush()
+
+    item = ContentSegment(
+        content_id=external_content_id,
+        segment_index=0,
+        segment_offset=0,
         visual_fp=json.dumps(payload.visual_fp),
-        audio_fp=json.dumps(payload.audio_fp),
-        logo_fp=json.dumps(payload.logo_fp),
-        ocr_keywords=payload.ocr_keywords,
+        audio_fp=json.dumps(payload.audio_fp)
     )
     db.add(item)
     db.commit()
+    db.refresh(content)
     db.refresh(item)
     
     # Sync to Qdrant
     vector_store.upsert_reference(external_content_id, payload.visual_fp, payload.logo_fp)
     
     return {
-        "id": item.id,
-        "external_content_id": item.external_content_id,
-        "title": item.title,
-        "category": item.category,
-        "channel_name": item.channel_name,
+        "id": item.segment_id,
+        "external_content_id": content.content_id,
+        "title": content.title,
+        "category": content.content_type,
+        "channel_name": content.platform_id,
         "visual_fp": json.loads(item.visual_fp),
-        "logo_fp": json.loads(item.logo_fp),
+        "logo_fp": json.loads(item.visual_fp),
         "audio_fp": item.audio_fp,
-        "ocr_keywords": item.ocr_keywords,
+        "ocr_keywords": "",
+        "platform": content.platform_id,
+        "series": content.series_name,
+        "season": content.season_number,
+        "episode": content.episode_number,
     }
 
 
 @app.delete("/api/v1/library/{item_id}")
 def delete_library_item(item_id: int, db: Session = Depends(get_db)):
     from content_platform.server.vector_store import vector_store
-    item = db.query(ContentLibrary).filter(ContentLibrary.id == item_id).first()
+    item = db.query(ContentSegment).filter(ContentSegment.segment_id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Library item not found")
     
+    content_id = item.content_id
     # Remove from Qdrant
-    vector_store.delete_reference(item.external_content_id)
+    vector_store.delete_reference(content_id)
     
     db.delete(item)
     db.commit()
+
+    # Cleanup Content if no segments left
+    has_segments = db.query(ContentSegment).filter(ContentSegment.content_id == content_id).first()
+    if not has_segments:
+        content = db.query(Content).filter(Content.content_id == content_id).first()
+        if content:
+            db.delete(content)
+            db.commit()
+
     return {"status": "deleted"}
 
 
@@ -446,15 +541,27 @@ def resolve_capture(capture_id: int, payload: CaptureResolvePayload, db: Session
         visual_fp_str = capture.visual_fp
     
     # Create content library entry
-    library_item = ContentLibrary(
-        external_content_id=external_content_id,
+    from content_platform.server.matching import parse_title_metadata
+    plat_val, chan_val, series_val, season_val, episode_val = parse_title_metadata(payload.title, payload.category)
+    
+    content = Content(
+        content_id=external_content_id,
         title=payload.title,
-        category=payload.category,
-        channel_name=payload.channel_name,
+        content_type=payload.category,
+        platform_id=payload.channel_name or plat_val or chan_val,
+        series_name=series_val,
+        season_number=season_val,
+        episode_number=episode_val
+    )
+    db.add(content)
+    db.flush()
+
+    library_item = ContentSegment(
+        content_id=external_content_id,
+        segment_index=0,
+        segment_offset=0,
         visual_fp=visual_fp_str,
-        audio_fp=capture.audio_fp,
-        logo_fp=capture.logo_fp,
-        ocr_keywords=capture.ocr_text,
+        audio_fp=capture.audio_fp
     )
     db.add(library_item)
     db.flush()
@@ -469,6 +576,7 @@ def resolve_capture(capture_id: int, payload: CaptureResolvePayload, db: Session
     
     # Update recognition result record
     if capture.result:
+        capture.result.content_id = external_content_id
         capture.result.content_name = payload.title
         capture.result.content_type = payload.category
         capture.result.confidence = 1.0
@@ -476,16 +584,27 @@ def resolve_capture(capture_id: int, payload: CaptureResolvePayload, db: Session
         capture.result.audio_score = 1.0
         capture.result.ocr_score = 1.0
         capture.result.logo_score = 1.0
+        capture.result.matched_platform = plat_val or capture.result.matched_platform
+        capture.result.matched_channel = payload.channel_name or chan_val
+        capture.result.series = series_val
+        capture.result.season = season_val
+        capture.result.episode = episode_val
     else:
         result_record = RecognitionResultRecord(
             capture_id=capture.id,
+            content_id=external_content_id,
             content_name=payload.title,
             content_type=payload.category,
             confidence=1.0,
             visual_score=1.0,
             audio_score=1.0,
             ocr_score=1.0,
-            logo_score=1.0
+            logo_score=1.0,
+            matched_platform=plat_val or "unknown",
+            matched_channel=payload.channel_name or chan_val,
+            series=series_val,
+            season=season_val,
+            episode=episode_val
         )
         db.add(result_record)
         
@@ -502,7 +621,7 @@ def resolve_capture(capture_id: int, payload: CaptureResolvePayload, db: Session
     if main_loop and main_loop.is_running():
         asyncio.run_coroutine_threadsafe(manager.broadcast({"type": "update"}), main_loop)
         
-    return {"status": "resolved", "library_id": library_item.id}
+    return {"status": "resolved", "library_id": library_item.segment_id}
 
 
 @app.get("/api/v1/analytics/overview")

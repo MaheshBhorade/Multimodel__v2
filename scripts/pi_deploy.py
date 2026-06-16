@@ -40,16 +40,28 @@ def run(ssh: paramiko.SSHClient, command: str) -> str:
     return out
 
 
+def _sftp_mkdirs(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
+    """Recursively create remote directories (like mkdir -p)."""
+    if remote_dir in ("", "/"):
+        return
+    try:
+        sftp.stat(remote_dir)
+    except FileNotFoundError:
+        parent = posixpath.dirname(remote_dir)
+        _sftp_mkdirs(sftp, parent)
+        try:
+            sftp.mkdir(remote_dir)
+        except OSError:
+            pass
+
+
 def upload_tree(sftp: paramiko.SFTPClient, local_root: Path, remote_root: str) -> None:
     for root, dirs, files in os.walk(local_root):
         dirs[:] = [d for d in dirs if d not in {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache", "manual_ingestion", "docs", "tests", "videos"}]
         relative = Path(root).relative_to(local_root)
         remote_dir = posixpath.join(remote_root, relative.as_posix()).rstrip("/")
         if remote_dir:
-            try:
-                sftp.mkdir(remote_dir)
-            except OSError:
-                pass
+            _sftp_mkdirs(sftp, remote_dir)
         for file_name in files:
             ignored_endings = (".pyc", ".db", ".mp4", ".mkv", ".wav", ".zip", ".xlsx", ".png", ".jpg", ".jpeg")
             ignored_names = {"verify_implementation.py", "check.py", "PROJECT_STRUCTURE.json", "docker-compose.yml", "clip_vit_b32_vision.onnx"}

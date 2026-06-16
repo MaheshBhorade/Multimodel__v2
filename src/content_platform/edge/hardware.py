@@ -22,7 +22,8 @@ def discover_audio_device() -> str:
             if len(parts) >= 2:
                 name = parts[1]
                 if any(token in name.lower() for token in ("video", "usb", "macrosilicon", "c3-1")):
-                    return name
+                    if "monitor" not in name.lower() and "output" not in name.lower():
+                        return name
     except Exception:
         pass
 

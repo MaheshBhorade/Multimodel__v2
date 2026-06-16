@@ -47,18 +47,23 @@ class FingerprintExtractor:
             return
         try:
             from content_platform.server.db import SessionLocal
-            from content_platform.server.models import ContentLibrary
+            from content_platform.server.models import Content, ContentSegment
             import json
 
             with SessionLocal() as db:
-                items = db.query(ContentLibrary).all()
-                for item in items:
-                    title = item.title.lower()
+                segments = (
+                    db.query(ContentSegment)
+                    .join(Content, Content.content_id == ContentSegment.content_id)
+                    .filter(Content.title.in_(["Goyamart S01E91", "Goyamart S01E92"]))
+                    .all()
+                )
+                for segment in segments:
+                    title = segment.content.title.lower()
                     if title not in self._simulated_segments:
                         self._simulated_segments[title] = []
                     try:
-                        vis = json.loads(item.visual_fp)
-                        aud = json.loads(item.audio_fp)
+                        vis = json.loads(segment.visual_fp)
+                        aud = json.loads(segment.audio_fp)
                         self._simulated_segments[title].append((vis, aud))
                     except Exception:
                         pass
@@ -94,7 +99,7 @@ class FingerprintExtractor:
         
         # Every 10 seconds, switch between 2 songs
         idx = (int(now.timestamp()) // 10) % 2
-        song_name = "goyamart episode 91" if idx == 0 else "goyamart episode 92"
+        song_name = "goyamart s01e91" if idx == 0 else "goyamart s01e92"
 
         self._load_simulated_segments()
         
