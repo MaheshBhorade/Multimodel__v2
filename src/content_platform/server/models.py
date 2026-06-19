@@ -14,7 +14,7 @@ class Device(Base):
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active")
 
-    captures: Mapped[list["Capture"]] = relationship(back_populates="device")
+    captures: Mapped[list["Capture"]] = relationship(back_populates="device", cascade="all, delete-orphan")
 
 
 class Capture(Base):
@@ -61,7 +61,8 @@ class Capture(Base):
 
     result: Mapped["RecognitionResultRecord"] = relationship(
         back_populates="capture",
-        uselist=False
+        uselist=False,
+        cascade="all, delete-orphan"
     )
 
 

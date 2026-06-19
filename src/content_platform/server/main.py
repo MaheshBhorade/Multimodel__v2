@@ -380,6 +380,16 @@ def list_devices(db: Session = Depends(get_db)):
     ]
 
 
+@app.delete("/api/v1/devices/{device_id}")
+def delete_device(device_id: str, db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    db.delete(device)
+    db.commit()
+    return {"status": "success", "message": f"Device {device_id} deleted successfully"}
+
+
 @app.get("/api/v1/captures")
 def list_captures(
     device_id: str | None = None,

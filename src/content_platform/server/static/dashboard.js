@@ -639,7 +639,7 @@ window.deletePlatformItem = async function(itemId) {
 // Render: CONNECTED DEVICES
 function renderDevices() {
   if (state.devices.length === 0) {
-    elements.devicesList.innerHTML = '<tr><td colspan="5" class="loading-state">No connected devices detected.</td></tr>';
+    elements.devicesList.innerHTML = '<tr><td colspan="6" class="loading-state">No connected devices detected.</td></tr>';
     return;
   }
 
@@ -658,10 +658,33 @@ function renderDevices() {
         <td>${d.location || '<span class="text-muted">Not Set</span>'}</td>
         <td style="font-weight: 500;">${d.capture_count}</td>
         <td>${lastActiveStr}</td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="deleteDevice('${d.device_id}')">Delete</button>
+        </td>
       </tr>
     `;
   }).join('');
 }
+
+window.deleteDevice = async function(deviceId) {
+  if (!confirm(`Are you sure you want to delete device "${deviceId}"? This will also delete all captures and history associated with this device.`)) return;
+
+  try {
+    const response = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}`, {
+      method: 'DELETE'
+    });
+
+    if (response.ok) {
+      showToast('Device Deleted', `Successfully deleted device "${deviceId}" and its history.`, 'success');
+      fetchData();
+    } else {
+      showToast('Error', 'Failed to delete device.', 'danger');
+    }
+  } catch (error) {
+    console.error('Delete device error:', error);
+    showToast('Connection Error', 'Server communication failure.', 'danger');
+  }
+};
 
 // Open Resolve Capture Modal
 function openResolveModal(captureId) {
