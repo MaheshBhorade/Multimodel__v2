@@ -452,7 +452,7 @@ function renderOverview() {
     
     // Match breakdown
     const breakdown = c.result ? c.result.breakdown : { visual_score: 0, audio_score: 0, ocr_score: 0, logo_score: 0 };
-    const breakdownText = `V: ${(breakdown.visual_score).toFixed(2)} | A: ${(breakdown.audio_score).toFixed(2)} | O: ${(breakdown.ocr_score).toFixed(2)} | L: ${(breakdown.logo_score).toFixed(2)}`;
+    const breakdownText = `V: ${(breakdown.visual_score).toFixed(2)} | A: ${(breakdown.audio_score).toFixed(2)} | L: ${(breakdown.logo_score).toFixed(2)}`;
 
     return `
       <tr>
@@ -513,7 +513,7 @@ function renderReviewQueue() {
             <span>${timeStr}</span>
           </div>
           <h4 style="margin-bottom: 8px; font-family: var(--font-heading);">Device: <span style="color: #c084fc;">${u.device_id}</span></h4>
-          <div class="ocr-box">${u.ocr_text || 'No text extracted via OCR.'}</div>
+          <div class="ocr-box" style="display: none;"></div>
           <div class="review-actions">
             <button class="btn btn-primary btn-sm" onclick="openResolveModal(${u.id})">
               Resolve Capture
@@ -543,7 +543,7 @@ function renderLibrary() {
         <td><span class="tag ${item.category}">${item.category}</span></td>
         <td>${item.channel_name || '<span class="text-muted">-</span>'}</td>
         <td style="font-family: monospace; color: #60a5fa;">${item.audio_fp || '-'}</td>
-        <td style="font-size: 0.8rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.ocr_keywords || '-'}</td>
+        <td style="display: none;">${item.ocr_keywords || '-'}</td>
         <td style="font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">
           V: ${visualStr}<br>
           L: ${logoStr}
