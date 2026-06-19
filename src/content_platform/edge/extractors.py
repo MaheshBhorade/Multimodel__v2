@@ -41,6 +41,7 @@ class FingerprintExtractor:
         # Simulated database cache
         self._simulated_segments = {}
         self._db_loaded = False
+        self._consecutive_silence_count = 0
 
     def _load_simulated_segments(self) -> None:
         if self._db_loaded:
@@ -279,10 +280,19 @@ class FingerprintExtractor:
         if audio_bytes and len(audio_bytes) >= 44:
             arr = wav_bytes_to_ndarray(audio_bytes)
             if len(arr) > 0:
+                # Check for empty/silent input (e.g. all zeros or maximum amplitude close to 0)
+                max_amp = float(np.max(np.abs(arr)))
+                if max_amp < 0.001:
+                    logger.warning("Captured audio is silent (max amplitude: %.6f). Triggering auto-healing...", max_amp)
+                    self._trigger_audio_healing()
+                else:
+                    self._consecutive_silence_count = 0
                 audio_fp = UnifiedFingerprinter.audio_fingerprint(arr, sr=16000)
             else:
+                self._trigger_audio_healing()
                 audio_fp = [0.0] * 130
         else:
+            self._trigger_audio_healing()
             audio_fp = [0.0] * 130
             
         # Snapshot: find best quality frame
@@ -307,6 +317,113 @@ class FingerprintExtractor:
             snapshot_bytes=buffer.tobytes() if ok else None,
             snapshot_filename=f"{device_id}_{int(timestamp.timestamp())}.jpg",
         )
+
+    def _trigger_audio_healing(self) -> None:
+        """
+        Unmutes capture card and restarts/reconfigures PulseAudio source.
+        If silent audio persists, resets the USB interface.
+        """
+        try:
+            from pathlib import Path
+            import subprocess
+            
+            logger.info("Starting auto-healing of audio input devices...")
+            
+            # Check if this is a persistent silence. We keep a count of consecutive silences.
+            if not hasattr(self, "_consecutive_silence_count"):
+                self._consecutive_silence_count = 0
+            self._consecutive_silence_count += 1
+            
+            # If we have had multiple consecutive silent batches, try power-cycling the USB device
+            if self._consecutive_silence_count >= 2:
+                logger.warning(f"Detected {self._consecutive_silence_count} consecutive silent batches. Resetting USB capture card...")
+                self._reset_usb_device()
+                self._consecutive_silence_count = 0
+                return
+            
+            # 1. Unmute ALSA capture card dynamically
+            card_idx = None
+            cards_path = Path("/proc/asound/cards")
+            if cards_path.exists():
+                for line in cards_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    if any(token in line for token in ("Video", "USB-Audio", "Macrosilicon", "C3-1 USB3")):
+                        parts = line.strip().split()
+                        if parts and parts[0].isdigit():
+                            card_idx = parts[0]
+                            break
+            
+            if card_idx is not None:
+                logger.info(f"Unmuting ALSA mixer controls on card {card_idx}")
+                subprocess.run(["amixer", "-c", card_idx, "sset", "Digital In", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["amixer", "-c", card_idx, "sset", "PCM", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # Also unmute general Capture/Mic controls just in case
+            subprocess.run(["amixer", "sset", "Capture", "100%", "unmute"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["amixer", "sset", "Mic", "100%", "unmute"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # 2. Configure PipeWire / PulseAudio volume and unmute
+            audio_dev = discover_audio_device()
+            if audio_dev and not audio_dev.startswith("plughw:") and not audio_dev.startswith("hw:") and audio_dev != "default":
+                logger.info(f"Setting volume to 100% and unmuting PipeWire/Pulse source: {audio_dev}")
+                subprocess.run(["pactl", "set-source-mute", audio_dev, "0"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["pactl", "set-source-volume", audio_dev, "100%"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+                # Wake up the suspended source by reading 1 second of audio
+                subprocess.run(["arecord", "-D", "pulse", "-d", "1", "-f", "S16_LE", "-r", "16000", "-c", "1", "/dev/null"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+            logger.info("Audio auto-healing completed.")
+        except Exception as e:
+            logger.warning(f"Failed to perform audio auto-healing: {e}")
+
+    def _reset_usb_device(self) -> bool:
+        """
+        Dynamically finds the USB port of the Macrosilicon capture card
+        and power-cycles it by unbinding and rebinding the USB driver.
+        """
+        try:
+            import os
+            import subprocess
+            import time
+            
+            # Find the port dynamically
+            dev_name = None
+            for dev in os.listdir("/sys/bus/usb/devices/"):
+                prod_path = f"/sys/bus/usb/devices/{dev}/product"
+                if os.path.exists(prod_path):
+                    try:
+                        with open(prod_path, "r") as f:
+                            name = f.read().strip().lower()
+                            if any(x in name for x in ("macrosilicon", "video", "c3-1")):
+                                dev_name = dev
+                                break
+                    except Exception:
+                        pass
+            
+            if not dev_name:
+                logger.warning("Could not locate USB capture card in sysfs for reset.")
+                return False
+                
+            logger.info(f"Dynamically resolved USB capture card at port {dev_name}. Power-cycling USB interface...")
+            
+            # Run unbind via sudo (requires sudoers NOPASSWD config)
+            subprocess.run(
+                f"echo '{dev_name}' | sudo tee /sys/bus/usb/drivers/usb/unbind",
+                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            time.sleep(2.0)
+            
+            # Run bind via sudo
+            subprocess.run(
+                f"echo '{dev_name}' | sudo tee /sys/bus/usb/drivers/usb/bind",
+                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            time.sleep(3.0)
+            logger.info("USB interface power-cycle completed.")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to reset USB device: {e}")
+            return False
+
 
     def _record_audio_snippet(self, device: str, duration: int = 10) -> bytes:
         import tempfile

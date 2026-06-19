@@ -67,11 +67,13 @@ if settings.database_url.startswith("sqlite"):
         finally:
             cursor.close()
 else:
+    connect_args = {"options": "-c timezone=utc"} if settings.database_url.startswith("postgresql") else {}
     engine = create_engine(
         settings.database_url,
         future=True,
         pool_size=20,
-        max_overflow=50
+        max_overflow=50,
+        connect_args=connect_args
     )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
@@ -108,11 +110,13 @@ if settings.platform_database_url.startswith("sqlite"):
         finally:
             cursor.close()
 else:
+    platform_connect_args = {"options": "-c timezone=utc"} if settings.platform_database_url.startswith("postgresql") else {}
     platform_engine = create_engine(
         settings.platform_database_url,
         future=True,
         pool_size=20,
-        max_overflow=50
+        max_overflow=50,
+        connect_args=platform_connect_args
     )
 
 PlatformSessionLocal = sessionmaker(bind=platform_engine, autoflush=False, autocommit=False, future=True)

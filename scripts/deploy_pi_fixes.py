@@ -38,12 +38,11 @@ try:
     # Using password for sudo execution
     stdin, stdout, stderr = ssh.exec_command(f"echo '{password}' | sudo -S {remote_fix_sh}")
     
-    out = stdout.read().decode("utf-8", errors="ignore")
+    print("\n=== Script Output ===")
+    for line in stdout:
+        print(line.rstrip())
+        
     err = stderr.read().decode("utf-8", errors="ignore")
-    
-    if out.strip():
-        print("\n=== Script Output ===")
-        print(out.strip())
     if err.strip():
         # filter out the sudo password warning
         filtered_err = "\n".join([line for line in err.splitlines() if "password" not in line.lower()])

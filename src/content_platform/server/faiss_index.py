@@ -13,7 +13,7 @@ class FAISSIndex:
         self.dim = dim
         self.gpu = gpu
         self.lock = threading.Lock()
-        self.index = faiss.IndexFlatL2(dim)
+        self.index = faiss.IndexFlatIP(dim)
         
         if gpu:
             try:
@@ -46,7 +46,7 @@ class FAISSIndex:
             if idx < 0 or idx >= len(self.id_to_content):
                 continue
             meta = self.id_to_content[int(idx)]
-            sim = 1 / (1 + float(dist))
+            sim = max(0.0, min(1.0, float(dist)))
             
             if isinstance(meta, dict):
                 results.append({

@@ -8,9 +8,10 @@ const state = {
   pollingInterval: null,
   isPolling: true,
   capturesPage: 0,
-  capturesLimit: 15,
+  capturesLimit: 100,
   totalCaptures: 0,
-  eventSource: null
+  eventSource: null,
+  platforms: []
 };
 
 // Chart.js references
@@ -40,6 +41,7 @@ const elements = {
   capturesList: document.getElementById('captures-list'),
   reviewList: document.getElementById('review-list'),
   libraryList: document.getElementById('library-list'),
+  platformsList: document.getElementById('platforms-list'),
   devicesList: document.getElementById('devices-list'),
   
   // Resolve Modal
@@ -63,6 +65,7 @@ const tabMeta = {
   overview: { title: 'Dashboard Overview', desc: 'Monitor stream status and system metrics in real-time.' },
   review: { title: 'Review Queue', desc: 'Analyze and resolve unrecognized content feeds captured by edge agents.' },
   library: { title: 'Reference Content Library', desc: 'Manage fingerprint signatures and category tags for match optimization.' },
+  platforms: { title: 'Logo & Channel reference database', desc: 'Manage TV channel and platform references used for layout matching.' },
   devices: { title: 'Connected Edge Devices', desc: 'Inspect status, locations, and throughput profiles of Raspberry Pi hardware.' },
   analytics: { title: 'Analytics Reports', desc: 'Inspect aggregated system statistics, content categories, ad frequencies, and playback timelines.' }
 };
@@ -72,7 +75,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setupNavigation();
   setupEventListeners();
   startSSE();
-  fetchData();
 });
 
 // Helper to navigate to a tab and update UI/State
@@ -193,6 +195,12 @@ function setupEventListeners() {
       }
     });
   }
+
+  // Platforms tab - Load library content button
+  const btnLoadLibraryPlat = document.getElementById('btn-load-library-plat');
+  if (btnLoadLibraryPlat) {
+    btnLoadLibraryPlat.addEventListener('click', loadAndRenderLibraryPlat);
+  }
 }
 
 // Server-Sent Events (SSE) and Fallback Polling
@@ -237,12 +245,13 @@ function stopSSE() {
 // Global API Data Fetcher
 async function fetchData() {
   try {
-    const [devices, captures, library, unknowns, timeline] = await Promise.all([
+    const [devices, captures, library, unknowns, timeline, platforms] = await Promise.all([
       fetch('/api/v1/devices').then(r => r.json()),
       fetch(`/api/v1/captures?limit=${state.capturesLimit}&offset=${state.capturesPage * state.capturesLimit}`).then(r => r.json()),
       fetch('/api/v1/library').then(r => r.json()),
       fetch('/api/v1/captures?only_unknown=true&limit=50').then(r => r.json()),
-      fetch('/api/v1/analytics/timeline').then(r => r.json())
+      fetch('/api/v1/analytics/timeline').then(r => r.json()),
+      fetch('/api/v1/platforms').then(r => r.json()).catch(() => [])
     ]);
 
     state.devices = devices;
@@ -251,6 +260,7 @@ async function fetchData() {
     state.library = library;
     state.unknowns = unknowns.items;
     state.timeline = timeline;
+    state.platforms = platforms;
 
     updateKPIs();
     renderActiveTab();
@@ -291,6 +301,9 @@ function renderActiveTab() {
     case 'library':
       renderLibrary();
       break;
+    case 'platforms':
+      renderPlatforms();
+      break;
     case 'devices':
       renderDevices();
       break;
@@ -316,7 +329,6 @@ function formatTime(secs) {
 function renderOverview() {
   if (state.captures.length === 0) {
     elements.capturesList.innerHTML = '<tr><td colspan="9" class="loading-state">No captures recorded yet. Run crp-edge agent.</td></tr>';
-    renderTimeline(state.timeline);
     return;
   }
 
@@ -347,10 +359,59 @@ function renderOverview() {
       ? `<img src="${c.snapshot_url}" class="preview-thumbnail" alt="Thumb" onclick="openImageWindow('${c.snapshot_url}')">`
       : `<span class="text-muted" style="font-size: 0.75rem;">None</span>`;
 
-    // Platform layout
-    const platform = c.result && c.result.matched_platform ? c.result.matched_platform : 'unknown';
-    const platformHtml = platform !== 'unknown' 
-      ? `<span class="tag platform-${platform.toLowerCase()}" style="background: rgba(167, 139, 250, 0.15); color: #c084fc; border: 1px solid rgba(167, 139, 250, 0.3); padding: 2px 8px; border-radius: 4px; font-weight: 500; font-size: 0.75rem;">${platform}</span>`
+    // Platform and Channel logic
+    const OTT_PLATFORMS = new Set(['netflix', 'youtube', 'prime_video', 'sonyliv', 'jiohotstar', 'zee5', 'ott', 'uplay']);
+    
+    function getPlatformDisplayName(id) {
+      if (!id) return '-';
+      const mapping = {
+        'netflix': 'Netflix',
+        'youtube': 'YouTube',
+        'prime_video': 'Prime Video',
+        'sonyliv': 'SonyLIV',
+        'jiohotstar': 'JioHotstar',
+        'zee5': 'Zee5',
+        'sony_max': 'Sony Max',
+        'star_gold': 'Star Gold',
+        'zee_cinema': 'Zee Cinema',
+        'panarmenian_tv': 'PanArmenian TV',
+        'shant_tv_armenia': 'SHANT TV Armenia'
+      };
+      const key = id.toLowerCase().trim();
+      return mapping[key] || id.replace(/[-_]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+    }
+
+    const matchedPlat = c.result && c.result.matched_platform ? c.result.matched_platform : 'unknown';
+    const matchedChan = c.result && c.result.matched_channel ? c.result.matched_channel : '';
+
+    let platformVal = 'unknown';
+    let channelVal = 'unknown';
+
+    if (matchedPlat !== 'unknown') {
+      const platKey = matchedPlat.toLowerCase().trim();
+      if (OTT_PLATFORMS.has(platKey)) {
+        platformVal = getPlatformDisplayName(matchedPlat);
+      } else {
+        // It's a channel (logo matched)
+        channelVal = getPlatformDisplayName(matchedPlat);
+      }
+    }
+
+    if (matchedChan) {
+      channelVal = matchedChan;
+    }
+
+    // Fallback: if we recognized visual content of a series, platform defaults to YouTube
+    if (platformVal === 'unknown' && c.result && c.result.content_type === 'series') {
+      platformVal = 'YouTube';
+    }
+
+    const platformHtml = (platformVal !== 'unknown' && platformVal !== '-')
+      ? `<span class="tag platform-${platformVal.toLowerCase().replace(/[^a-z0-9]/g, '')}" style="background: rgba(167, 139, 250, 0.15); color: #c084fc; border: 1px solid rgba(167, 139, 250, 0.3); padding: 2px 8px; border-radius: 4px; font-weight: 500; font-size: 0.75rem;">${platformVal}</span>`
+      : `<span class="text-muted" style="font-size: 0.8rem;">-</span>`;
+
+    const channelHtml = (channelVal !== 'unknown' && channelVal !== '-')
+      ? `<span class="tag channel-${channelVal.toLowerCase().replace(/[^a-z0-9]/g, '')}" style="background: rgba(96, 165, 250, 0.15); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3); padding: 2px 8px; border-radius: 4px; font-weight: 500; font-size: 0.75rem;">${channelVal}</span>`
       : `<span class="text-muted" style="font-size: 0.8rem;">-</span>`;
 
     // Category / Tag
@@ -381,9 +442,9 @@ function renderOverview() {
         
         if (extra) {
            contentName = baseName + (extra.startsWith('(') ? ' ' : ' - ') + extra;
-        } else {
+         } else {
            contentName = baseName;
-        }
+         }
       } else {
         contentName = baseName;
       }
@@ -399,6 +460,7 @@ function renderOverview() {
         <td style="font-family: monospace; color: #a78bfa;">${c.device_id}</td>
         <td>${snapshotHtml}</td>
         <td>${platformHtml}</td>
+        <td>${channelHtml}</td>
         <td style="font-weight: 600;">${contentName}</td>
         <td><span class="tag ${category}">${category}</span></td>
         <td>
@@ -413,8 +475,6 @@ function renderOverview() {
       </tr>
     `;
   }).join('');
-
-  renderTimeline(state.timeline);
 }
 
 // Render: REVIEW QUEUE
@@ -495,6 +555,86 @@ function renderLibrary() {
     `;
   }).join('');
 }
+
+// Render: PLATFORMS REFERENCE (Channel Logos)
+// Render: PLATFORMS REFERENCE (Channel Logos) - Grouped to prevent clutter
+function renderPlatforms() {
+  if (!state.platforms || state.platforms.length === 0) {
+    elements.platformsList.innerHTML = '<tr><td colspan="5" class="loading-state">Platform database is empty. Register logos to begin matching.</td></tr>';
+    return;
+  }
+
+  // Group by platform_id
+  const groups = {};
+  state.platforms.forEach(item => {
+    const key = item.platform_id;
+    if (!groups[key]) {
+      groups[key] = {
+        platform_id: item.platform_id,
+        platform_name: item.platform_name,
+        platform_type: item.platform_type,
+        count: 0,
+        ids: []
+      };
+    }
+    groups[key].count++;
+    groups[key].ids.push(item.id);
+  });
+
+  elements.platformsList.innerHTML = Object.values(groups).map(group => {
+    return `
+      <tr>
+        <td style="font-family: monospace; font-size: 0.75rem; color: var(--text-muted);">${group.platform_id}</td>
+        <td style="font-weight: 600; color: #a78bfa;">${group.platform_name}</td>
+        <td><span class="tag ${group.platform_type.toLowerCase() === 'ott' ? 'ott' : 'channel'}" style="background: rgba(96, 165, 250, 0.15); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3); padding: 2px 8px; border-radius: 4px; font-weight: 500; font-size: 0.75rem;">${group.platform_type}</span></td>
+        <td style="font-weight: 500; color: var(--text-secondary);">${group.count} template reference${group.count === 1 ? '' : 's'}</td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="deletePlatformGroup('${group.platform_id}', [${group.ids.join(', ')}])">Delete All</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+window.deletePlatformGroup = async function(platformId, ids) {
+  if (!confirm(`Are you sure you want to delete all ${ids.length} templates for platform "${platformId}"?`)) return;
+
+  try {
+    const response = await fetch(`/api/v1/platforms?platform_id=${encodeURIComponent(platformId)}`, {
+      method: 'DELETE'
+    });
+    if (response.ok) {
+      const data = await response.json();
+      showToast('Reference Removed', `Successfully deleted all ${data.count || ids.length} templates for "${platformId}".`, 'success');
+      fetchData();
+    } else {
+      showToast('Error', 'Failed to delete templates.', 'danger');
+    }
+  } catch (e) {
+    console.error('Failed to delete templates:', e);
+    showToast('Error', 'Failed to delete templates.', 'danger');
+  }
+};
+
+window.deletePlatformItem = async function(itemId) {
+  if (!confirm('Are you sure you want to delete this channel template reference?')) return;
+
+  try {
+    const response = await fetch(`/api/v1/platforms/${itemId}`, {
+      method: 'DELETE'
+    });
+
+    if (response.ok) {
+      showToast('Reference Removed', 'The channel template has been deleted.', 'success');
+      fetchData();
+    } else {
+      showToast('Error', 'Failed to delete channel template.', 'danger');
+    }
+  } catch (error) {
+    console.error('Delete channel template error:', error);
+    showToast('Connection Error', 'Server communication failure.', 'danger');
+  }
+};
 
 // Render: CONNECTED DEVICES
 function renderDevices() {
@@ -879,3 +1019,107 @@ function showToast(title, message, type = 'info') {
     setTimeout(() => toast.remove(), 300);
   }, 4000);
 }
+
+// Fetch and render library items inside platforms tab
+// Fetch and render library items inside platforms tab, grouped by series and collapsible
+async function loadAndRenderLibraryPlat() {
+  const container = document.getElementById('library-plat-container');
+  const tbody = document.getElementById('library-plat-list');
+  const btn = document.getElementById('btn-load-library-plat');
+  if (!container || !tbody || !btn) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Loading...';
+
+  try {
+    const res = await fetch('/api/v1/library');
+    if (!res.ok) throw new Error('Failed to fetch library');
+    const library = await res.json();
+    
+    if (library.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="loading-state">No content library items found.</td></tr>';
+    } else {
+      // Group by series or category
+      const groups = {};
+      library.forEach(item => {
+        let groupKey = item.series;
+        if (!groupKey) {
+          if (item.title && item.title.toLowerCase().includes('intro')) {
+            groupKey = 'Standalone Intros';
+          } else {
+            groupKey = 'Standalone Entries';
+          }
+        }
+        
+        if (!groups[groupKey]) {
+          groups[groupKey] = {
+            name: groupKey,
+            category: item.category,
+            platform: item.platform || item.channel_name || '-',
+            items: []
+          };
+        }
+        groups[groupKey].items.push(item);
+      });
+
+      let html = '';
+      Object.values(groups).forEach((group, idx) => {
+        const groupId = `lib-group-${idx}`;
+        const totalCount = group.items.length;
+        const countText = totalCount === 1 ? '1 item' : `${totalCount} items`;
+        
+        // Parent Header Row
+        html += `
+          <tr class="group-header-row" style="cursor: pointer; background: rgba(255,255,255,0.02);" onclick="toggleLibGroup('${groupId}')">
+            <td style="font-weight: 700; color: #c084fc;">
+              <span class="chevron" id="${groupId}-chevron" style="display: inline-block; transition: transform 0.2s; margin-right: 8px;">▸</span>
+              ${group.name}
+            </td>
+            <td style="font-weight: 600; color: var(--text-secondary);">${countText}</td>
+            <td><span class="tag" style="background: rgba(167, 139, 250, 0.15); color: #c084fc; border: 1px solid rgba(167, 139, 250, 0.3); padding: 2px 8px; border-radius: 4px; font-weight: 500; font-size: 0.75rem;">${group.category}</span></td>
+            <td style="color: var(--text-muted);">${group.platform}</td>
+          </tr>
+        `;
+        
+        // Children Rows
+        group.items.forEach(item => {
+          html += `
+            <tr class="${groupId}-child" style="display: none; background: rgba(0,0,0,0.15);">
+              <td style="padding-left: 28px; font-weight: 500; color: var(--text-secondary);">${item.title}</td>
+              <td style="font-family: monospace; font-size: 0.7rem; color: var(--text-muted);">${item.external_content_id}</td>
+              <td><span class="tag" style="background: rgba(255,255,255,0.05); color: var(--text-secondary); border: 1px solid rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.7rem;">${item.category}</span></td>
+              <td style="font-size: 0.8rem; color: var(--text-muted);">${item.platform || item.channel_name || '-'}</td>
+            </tr>
+          `;
+        });
+      });
+
+      tbody.innerHTML = html;
+    }
+    
+    container.style.display = 'block';
+    btn.textContent = 'Refresh Content Library';
+  } catch (error) {
+    console.error('Error loading library for platform tab:', error);
+    showToast('Error', 'Failed to load content library.', 'danger');
+    btn.textContent = 'Retry Loading Library';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Global toggle helper for expanding content groups
+window.toggleLibGroup = function(groupId) {
+  const children = document.querySelectorAll(`.${groupId}-child`);
+  const chevron = document.getElementById(`${groupId}-chevron`);
+  if (!children.length) return;
+
+  const isHidden = children[0].style.display === 'none';
+  children.forEach(child => {
+    child.style.display = isHidden ? 'table-row' : 'none';
+  });
+
+  if (chevron) {
+    chevron.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+  }
+};

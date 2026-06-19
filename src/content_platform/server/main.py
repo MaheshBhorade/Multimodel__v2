@@ -12,10 +12,11 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 
-from content_platform.server.db import Base, SessionLocal, engine, get_db, PlatformBase, platform_engine, PlatformSessionLocal
+from content_platform.server.db import Base, SessionLocal, engine, get_db, PlatformBase, platform_engine, PlatformSessionLocal, get_platform_db
 from content_platform.server.library import seed_reference_library
 from content_platform.server.matching import match_content, initialize_faiss_indexes, match_platform, initialize_platform_faiss_index
 from content_platform.server.models import Capture, Device, RecognitionResultRecord, Content, ContentSegment, PlaybackSession
+from content_platform.server.confidence_tuning import LOGO_ROI_MIN_STD
 from content_platform.shared.config import get_settings
 from content_platform.shared.models import CaptureResponse, FingerprintPayload, SnapshotUploadResponse
 
@@ -88,6 +89,31 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
         try:
             initialize_faiss_indexes(db)
             initialize_platform_faiss_index(db_platform)
+            # Server-side logo extraction from the snapshot if available
+            logo_fp = None
+            if payload.snapshot_url:
+                try:
+                    import cv2
+                    from content_platform.fingerprint.embeddings import DeepEmbeddingsExtractor
+                    parts = payload.snapshot_url.split("/snapshots/")
+                    if len(parts) > 1:
+                        local_path = SNAPSHOT_ROOT / parts[1]
+                        if local_path.exists():
+                            img = cv2.imread(str(local_path))
+                            if img is not None:
+                                h, w = img.shape[:2]
+                                ymin, ymax = int(h * 0.75), int(h * 0.95)
+                                xmin, xmax = int(w * 0.75), int(w * 0.98)
+                                logo_roi = img[ymin:ymax, xmin:xmax]
+                                if logo_roi is not None and logo_roi.size > 0:
+                                    import numpy as np
+                                    if np.std(logo_roi) >= LOGO_ROI_MIN_STD:
+                                        logo_fp = DeepEmbeddingsExtractor.extract_visual(logo_roi)
+                                    else:
+                                        logger.info(f"Skipping uniform/blank logo region (std: {np.std(logo_roi):.2f})")
+                except Exception as le:
+                    logger.warning(f"Server-side logo extraction failed: {le}")
+
             # Initialize last known platform for the device
             last_known_platform = "unknown"
             if capture_ids:
@@ -98,6 +124,7 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                         .join(Capture, Capture.id == RecognitionResultRecord.capture_id)
                         .filter(Capture.device_id == first_cap.device_id)
                         .filter(RecognitionResultRecord.matched_platform != "unknown")
+                        .filter(RecognitionResultRecord.matched_platform != "global")
                         .order_by(Capture.captured_at.desc())
                         .first()
                     )
@@ -113,6 +140,9 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                         f_dbg.write(f"Capture {capture_id} not found in DB!\n")
                     continue
                 
+                if logo_fp:
+                    capture.logo_fp = json.dumps(logo_fp)
+
                 # Reconstruct a single-second payload for this specific frame
                 single_payload = FingerprintPayload(
                     device_id=payload.device_id,
@@ -127,16 +157,67 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                     confidence_audio=payload.confidence_audio
                 )
                 
-                matched_plat = match_platform(db_platform, single_payload)
+                matched_plat = match_platform(db_platform, single_payload, logo_fp=logo_fp)
+                direct_plat_match = matched_plat != "unknown"
                 if matched_plat == "unknown":
-                    matched_plat = last_known_platform
+                    if logo_fp is not None:
+                        # Clear last known platform since logo matched explicitly as unknown
+                        last_known_platform = "unknown"
+                    else:
+                        # Fallback to last known platform only when no snapshot logo is available
+                        matched_plat = last_known_platform
                 else:
                     last_known_platform = matched_plat
-                result = match_content(db, single_payload, platform_id=matched_plat)
+
+                # If an OTT platform homepage layout is directly detected, we are on the UI/dashboard.
+                # Do not run content matching to prevent false detections from recommended thumbnails.
+                OTT_PLATFORMS = {"youtube", "uplay", "netflix", "prime_video", "sonyliv", "jiohotstar", "zee5", "ott"}
+                if direct_plat_match and matched_plat in OTT_PLATFORMS:
+                    from content_platform.shared.models import RecognitionResult, MatchBreakdown
+                    result = RecognitionResult(
+                        content_name="Unknown Content",
+                        content_type="unknown",
+                        confidence=0.0,
+                        breakdown=MatchBreakdown(
+                            visual_score=0.0,
+                            audio_score=0.0,
+                            ocr_score=0.0,
+                            logo_score=0.0
+                        ),
+                        matched_channel=None,
+                        playback_position=None
+                    )
+                else:
+                    result = match_content(db, single_payload, platform_id=matched_plat)
+
+                # Calculate actual logo similarity score if channel matched
+                final_logo_score = 0.0
+                if logo_fp and matched_plat and matched_plat != "unknown":
+                    try:
+                        from content_platform.server.models import PlatformReference
+                        from content_platform.server.matching import cosine_like_similarity
+                        ref_plats = db_platform.query(PlatformReference).filter(PlatformReference.platform_id == matched_plat).all()
+                        best_sim = 0.0
+                        for ref in ref_plats:
+                            ref_logo = json.loads(ref.logo_fp)
+                            sim = cosine_like_similarity(logo_fp, ref_logo)
+                            if sim > best_sim:
+                                best_sim = sim
+                        final_logo_score = best_sim
+                    except Exception as lse:
+                        logger.warning(f"Failed to calculate logo score: {lse}")
 
                 with open("debug_bg.txt", "a") as f_dbg:
                     f_dbg.write(f"Matched capture {capture_id} to: {result.content_name} ({result.content_type}) | Platform: {matched_plat}\n")
                 
+                # Resolve final platform
+                final_platform = result.platform
+                if final_platform in ("global", "unknown", None):
+                    if matched_plat not in ("unknown", "global", None):
+                        final_platform = matched_plat
+                    else:
+                        final_platform = final_platform or matched_plat or "unknown"
+
                 # Add recognition record
                 record = RecognitionResultRecord(
                     capture_id=capture.id,
@@ -147,8 +228,8 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                     visual_score=result.breakdown.visual_score,
                     audio_score=result.breakdown.audio_score,
                     ocr_score=result.breakdown.ocr_score,
-                    logo_score=result.breakdown.logo_score,
-                    matched_platform=result.platform or matched_plat,
+                    logo_score=final_logo_score,
+                    matched_platform=final_platform,
                     matched_channel=result.matched_channel,
                     series=result.series,
                     season=result.season,
@@ -513,6 +594,69 @@ def delete_library_item(item_id: int, db: Session = Depends(get_db)):
     return {"status": "deleted"}
 
 
+@app.get("/api/v1/platforms")
+def list_platforms(db_platform: Session = Depends(get_platform_db)):
+    from content_platform.server.models import PlatformReference
+    items = db_platform.query(PlatformReference).all()
+    results = []
+    for item in items:
+        try:
+            visual_fp = json.loads(item.visual_fp)[:4] if item.visual_fp else []
+        except Exception:
+            visual_fp = []
+        try:
+            logo_fp = json.loads(item.logo_fp)[:4] if item.logo_fp else []
+        except Exception:
+            logo_fp = []
+            
+        results.append({
+            "id": item.id,
+            "platform_id": item.platform_id,
+            "platform_name": item.platform_name,
+            "platform_type": item.platform_type,
+            "visual_fp": visual_fp,
+            "logo_fp": logo_fp,
+            "ocr_keywords": item.ocr_keywords
+        })
+    return results
+
+
+@app.delete("/api/v1/platforms")
+def delete_platforms_batch(platform_id: str = None, db_platform: Session = Depends(get_platform_db)):
+    from content_platform.server.models import PlatformReference
+    if not platform_id:
+        raise HTTPException(status_code=400, detail="platform_id query parameter is required")
+        
+    items = db_platform.query(PlatformReference).filter(PlatformReference.platform_id == platform_id).all()
+    if not items:
+        return {"status": "success", "message": f"No templates found for platform {platform_id}"}
+        
+    for item in items:
+        db_platform.delete(item)
+    db_platform.commit()
+    
+    # Rebuild platform FAISS index to reflect change once
+    initialize_platform_faiss_index(db_platform)
+    
+    return {"status": "deleted", "count": len(items)}
+
+
+@app.delete("/api/v1/platforms/{item_id}")
+def delete_platform(item_id: int, db_platform: Session = Depends(get_platform_db)):
+    from content_platform.server.models import PlatformReference
+    item = db_platform.query(PlatformReference).filter(PlatformReference.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Platform reference not found")
+    
+    db_platform.delete(item)
+    db_platform.commit()
+    
+    # Rebuild platform FAISS index to reflect change
+    initialize_platform_faiss_index(db_platform)
+    
+    return {"status": "deleted"}
+
+
 class CaptureResolvePayload(BaseModel):
     title: str
     category: str
@@ -823,8 +967,15 @@ async def sse_endpoint(request: Request):
         finally:
             manager.unsubscribe(q)
             
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
-
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 # Mount static files for dashboard last to avoid blocking API routes
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")

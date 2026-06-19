@@ -5,6 +5,19 @@ from pathlib import Path
 from content_platform.server.faiss_index import FAISSIndex
 from content_platform.server.models import Content, ContentSegment, PlatformReference
 from content_platform.shared.models import FingerprintPayload, MatchBreakdown, RecognitionResult
+from content_platform.server.confidence_tuning import (
+    LOGO_MATCH_THRESHOLD,
+    LAYOUT_MATCH_THRESHOLD,
+    VISUAL_SCORE_WEIGHT,
+    AUDIO_SCORE_WEIGHT,
+    MATCH_THRESHOLD_MODALITIES_STRONG,
+    MATCH_THRESHOLD_MODALITIES_WEAK,
+    MATCH_THRESHOLD_CONTINUOUS,
+    MATCH_THRESHOLD_INTRO,
+    SHARED_INTRO_MATCH_THRESHOLD,
+    SHARED_INTRO_MIN_EPISODES,
+    SHARED_INTRO_MAX_OFFSET,
+)
 
 import numpy as np
 from sqlalchemy import select
@@ -121,14 +134,28 @@ def initialize_platform_faiss_index(db_platform: Session) -> None:
         logger.error(f"Error rebuilding Platform FAISS index: {e}")
 
 
-def match_platform(db_platform: Session, payload: FingerprintPayload) -> str:
+def match_platform(db_platform: Session, payload: FingerprintPayload, logo_fp: list[float] = None) -> str:
     initialize_platform_faiss_index(db_platform)
     
+    global platform_visual_index
+    
+    # If a cropped logo fingerprint is extracted on the server, search platform_visual_index directly
+    if logo_fp:
+        if platform_visual_index is not None and len(logo_fp) == platform_visual_index.dim:
+            logo_arr = np.array(logo_fp, dtype=np.float32)
+            visual_results = platform_visual_index.search(logo_arr, k=5)
+            matches = []
+            for res in visual_results:
+                matches.append({"platform": res["content_id"], "score": res["score"]})
+            if matches:
+                matches.sort(key=lambda x: x["score"], reverse=True)
+                best_match = matches[0]
+                if best_match["score"] >= LOGO_MATCH_THRESHOLD:
+                    return best_match["platform"]
+        
     if not payload.visual_fps:
         return "unknown"
         
-    global platform_visual_index
-    
     # Check blank visual
     first_frame = payload.visual_fps[0] if isinstance(payload.visual_fps[0], list) else payload.visual_fps
     if is_blank_signal(first_frame):
@@ -189,8 +216,8 @@ def match_platform(db_platform: Session, payload: FingerprintPayload) -> str:
     matches.sort(key=lambda x: x["score"], reverse=True)
     best_match = matches[0]
     
-    # Increase threshold to 0.65 to avoid false positives during full-screen video playback
-    if best_match["score"] >= 0.65:
+    # Increase threshold to avoid false positives during full-screen video playback
+    if best_match["score"] >= LAYOUT_MATCH_THRESHOLD:
         return best_match["platform"]
         
     return "unknown"
@@ -268,7 +295,7 @@ class WeightedScores:
 
     @property
     def final(self) -> float:
-        return (self.visual * 0.70) + (self.audio * 0.30)
+        return (self.visual * VISUAL_SCORE_WEIGHT) + (self.audio * AUDIO_SCORE_WEIGHT)
 
 
 def cosine_like_similarity(left: list[float], right: list[float]) -> float:
@@ -529,12 +556,12 @@ def match_content(db: Session, payload: FingerprintPayload, platform_id: str = "
         elif audio_missing:
             combined_score = vis_sim
         else:
-            if vis_sim >= 0.75:
+            if vis_sim >= MATCH_THRESHOLD_MODALITIES_WEAK:
                 combined_score = vis_sim
-            elif vis_sim >= 0.60 and aud_sim >= 0.10:
-                combined_score = max(vis_sim, (vis_sim * 0.70) + (aud_sim * 0.30))
+            elif vis_sim >= MATCH_THRESHOLD_MODALITIES_STRONG and aud_sim >= 0.10:
+                combined_score = max(vis_sim, (vis_sim * VISUAL_SCORE_WEIGHT) + (aud_sim * AUDIO_SCORE_WEIGHT))
             else:
-                combined_score = (vis_sim * 0.70) + (aud_sim * 0.30)
+                combined_score = (vis_sim * VISUAL_SCORE_WEIGHT) + (aud_sim * AUDIO_SCORE_WEIGHT)
 
         # Apply temporal progression boost
         is_continuous = False
@@ -603,11 +630,21 @@ def match_content(db: Session, payload: FingerprintPayload, platform_id: str = "
                 content_type = "unknown"
 
         # Adaptive threshold based on available modalities
-        match_threshold = 0.60 if (audio_missing or vis_score >= 0.60) else 0.75
-        
-        # Lower threshold for continuous progression to improve stabilization
-        if best_match.get("is_continuous"):
-            match_threshold = 0.50
+        if audio_missing or aud_score < 0.15:
+            # Require stricter visual match when audio confirmation is missing
+            match_threshold = 0.90
+            if best_match.get("is_continuous"):
+                # Allow slightly lower threshold for continuous lock but still very strict
+                match_threshold = 0.80
+        else:
+            match_threshold = MATCH_THRESHOLD_MODALITIES_STRONG if vis_score >= MATCH_THRESHOLD_MODALITIES_STRONG else MATCH_THRESHOLD_MODALITIES_WEAK
+            if best_match.get("is_continuous"):
+                match_threshold = MATCH_THRESHOLD_CONTINUOUS
+
+        # Stricter threshold for dedicated intro content
+        is_intro_content = "intro" in content.content_id.lower() or "intro" in content.title.lower()
+        if is_intro_content:
+            match_threshold = MATCH_THRESHOLD_INTRO
 
         if confidence < match_threshold:
             return RecognitionResult(
@@ -626,20 +663,27 @@ def match_content(db: Session, payload: FingerprintPayload, platform_id: str = "
 
         # Check for shared intro/outro across different episodes of the same series
         if content_type == "series" and content.series_name:
-            matching_episodes = set()
-            for m in matches:
-                if m["score"] >= 0.55 and m["content"].content_type == "series" and m["content"].series_name == content.series_name:
-                    if m["content"].episode_number is not None:
-                        matching_episodes.add(m["content"].episode_number)
-            if len(matching_episodes) >= 3:
-                return RecognitionResult(
-                    content_id=f"series-{content.series_name.lower().replace(' ', '_')}-generic",
-                    content_name=f"{content.series_name} (Intro)",
-                    content_type="series",
-                    confidence=confidence,
-                    breakdown=MatchBreakdown(
-                        visual_score=vis_score,
-                        audio_score=aud_score,
+            if playback_pos <= SHARED_INTRO_MAX_OFFSET:
+                matching_episodes = set()
+                intro_thresh = SHARED_INTRO_MATCH_THRESHOLD - 0.02 if audio_missing else SHARED_INTRO_MATCH_THRESHOLD
+                for m in matches:
+                    if (
+                        m["score"] >= intro_thresh 
+                        and m["content"].content_type == "series" 
+                        and m["content"].series_name == content.series_name
+                        and abs(m["segment_offset"] - playback_pos) <= 15
+                    ):
+                        if m["content"].episode_number is not None:
+                            matching_episodes.add(m["content"].episode_number)
+                if len(matching_episodes) >= SHARED_INTRO_MIN_EPISODES:
+                    return RecognitionResult(
+                        content_id=f"series-{content.series_name.lower().replace(' ', '_')}-generic",
+                        content_name=f"{content.series_name} (Intro)",
+                        content_type="series",
+                        confidence=confidence,
+                        breakdown=MatchBreakdown(
+                            visual_score=vis_score,
+                            audio_score=aud_score,
                         ocr_score=0.0,
                         logo_score=0.0
                     ),

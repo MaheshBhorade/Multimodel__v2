@@ -183,8 +183,17 @@ def test_match_content_detects_intro() -> None:
         episode_number=3,
         platform_id="youtube"
     )
+    goyamart_ep4 = Content(
+        content_id="series-goyamart-s01-e04",
+        title="Goyamart S01E04",
+        content_type="series",
+        series_name="Goyamart",
+        season_number=1,
+        episode_number=4,
+        platform_id="youtube"
+    )
 
-    # Ingest same segment for all three episodes (represents the shared intro)
+    # Ingest same segment for all four episodes (represents the shared intro)
     ep1_seg = ContentSegment(
         segment_id=1,
         content_id="series-goyamart-s01-e01",
@@ -212,8 +221,17 @@ def test_match_content_detects_intro() -> None:
         audio_fp=json.dumps(aud),
         content=goyamart_ep3
     )
+    ep4_seg = ContentSegment(
+        segment_id=4,
+        content_id="series-goyamart-s01-e04",
+        segment_index=0,
+        segment_offset=0,
+        visual_fp=json.dumps(vis1),
+        audio_fp=json.dumps(aud),
+        content=goyamart_ep4
+    )
     
-    db = MockDB([ep1_seg, ep2_seg, ep3_seg], [goyamart_ep1, goyamart_ep2, goyamart_ep3])
+    db = MockDB([ep1_seg, ep2_seg, ep3_seg, ep4_seg], [goyamart_ep1, goyamart_ep2, goyamart_ep3, goyamart_ep4])
     
     # Payload matches the shared intro perfectly
     payload = FingerprintPayload(

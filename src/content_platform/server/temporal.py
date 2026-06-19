@@ -188,85 +188,198 @@ def smooth_recent_captures_for_device(db: Session, device_id: str, window_size: 
         )
         records.reverse()
         
-        if len(records) < window_size:
+        if len(records) < 3:
             return
 
-        half = window_size // 2
         modified = False
 
-        for i in range(half, len(records) - half):
-            center = records[i]
-            window = records[i - half : i + half + 1]
+        # Pass 1: Intro Gap-Fill
+        # Find all intro indices
+        intro_indices = []
+        for idx, r in enumerate(records):
+            is_intro = False
+            if r.content_name:
+                name_lower = r.content_name.lower()
+                id_lower = (r.content_id or "").lower()
+                if "intro" in name_lower or "intro" in id_lower:
+                    is_intro = True
+            if is_intro:
+                intro_indices.append(idx)
+
+        # Connect intro events if they are separated by unknown content and <= 90 seconds
+        k = 0
+        while k < len(intro_indices) - 1:
+            i = intro_indices[k]
+            j = intro_indices[k+1]
             
-            # Count occurrences of each known content in the window
-            counts = {}
-            content_details = {}
-            for r in window:
-                name = r.content_name
-                is_unknown = name in ("Matching in progress...", "Unknown Content", "unknown", "") or r.content_type == "unknown"
-                if is_unknown:
-                    continue
-                counts[name] = counts.get(name, 0) + 1
-                if name not in content_details:
-                    content_details[name] = {
-                        "type": r.content_type,
-                        "confidences": [],
-                        "vis_scores": [],
-                        "aud_scores": [],
-                        "ocr_scores": [],
-                        "logo_scores": [],
-                        "platforms": []
-                    }
-                content_details[name]["confidences"].append(r.confidence)
-                content_details[name]["vis_scores"].append(r.visual_score)
-                content_details[name]["aud_scores"].append(r.audio_score)
-                content_details[name]["ocr_scores"].append(r.ocr_score)
-                content_details[name]["logo_scores"].append(r.logo_score)
-                if r.matched_platform and r.matched_platform != "unknown":
-                    content_details[name]["platforms"].append(r.matched_platform)
+            time_diff = (records[j].capture.captured_at - records[i].capture.captured_at).total_seconds()
+            if time_diff <= 90.0:
+                all_between_unknown = True
+                for idx in range(i + 1, j):
+                    r_between = records[idx]
+                    is_unknown = r_between.content_name in ("Matching in progress...", "Unknown Content", "unknown", "") or r_between.content_type == "unknown"
+                    is_between_intro = False
+                    if r_between.content_name:
+                        nb_lower = r_between.content_name.lower()
+                        ib_lower = (r_between.content_id or "").lower()
+                        if "intro" in nb_lower or "intro" in ib_lower:
+                            is_between_intro = True
+                    if not (is_unknown or is_between_intro):
+                        all_between_unknown = False
+                        break
+                
+                if all_between_unknown:
+                    for idx in range(i + 1, j):
+                        r_between = records[idx]
+                        is_unknown = r_between.content_name in ("Matching in progress...", "Unknown Content", "unknown", "") or r_between.content_type == "unknown"
+                        if is_unknown:
+                            r_between.content_name = records[i].content_name
+                            r_between.content_type = records[i].content_type
+                            r_between.content_id = records[i].content_id
+                            r_between.series = records[i].series
+                            r_between.season = records[i].season
+                            r_between.episode = records[i].episode
+                            r_between.confidence = max(r_between.confidence, records[i].confidence, 0.85)
+                            r_between.visual_score = max(r_between.visual_score, records[i].visual_score)
+                            r_between.audio_score = max(r_between.audio_score, records[i].audio_score)
+                            r_between.matched_platform = records[i].matched_platform
+                            modified = True
+                            logger.info(
+                                "Intro gap-fill (capture_id=%d): filled as '%s'",
+                                r_between.capture_id,
+                                records[i].content_name
+                            )
+            k += 1
 
-            if not counts:
-                continue
+        # Pass 1.5: General Content/Episode Gap-Fill
+        last_known_idx = None
+        for idx, r in enumerate(records):
+            is_unknown = r.content_name in ("Matching in progress...", "Unknown Content", "unknown", "") or r.content_type == "unknown"
+            if not is_unknown:
+                if last_known_idx is not None:
+                    last_known_r = records[last_known_idx]
+                    if r.content_name == last_known_r.content_name:
+                        time_diff = (r.capture.captured_at - last_known_r.capture.captured_at).total_seconds()
+                        if time_diff <= 15.0:
+                            all_between_unknown = True
+                            for mid_idx in range(last_known_idx + 1, idx):
+                                mid_r = records[mid_idx]
+                                is_mid_unknown = mid_r.content_name in ("Matching in progress...", "Unknown Content", "unknown", "") or mid_r.content_type == "unknown"
+                                if not is_mid_unknown:
+                                    all_between_unknown = False
+                                    break
+                            
+                            if all_between_unknown:
+                                for mid_idx in range(last_known_idx + 1, idx):
+                                    mid_r = records[mid_idx]
+                                    mid_r.content_name = last_known_r.content_name
+                                    mid_r.content_type = last_known_r.content_type
+                                    mid_r.content_id = last_known_r.content_id
+                                    mid_r.series = last_known_r.series
+                                    mid_r.season = last_known_r.season
+                                    mid_r.episode = last_known_r.episode
+                                    mid_r.confidence = max(mid_r.confidence, last_known_r.confidence, 0.85)
+                                    mid_r.visual_score = max(mid_r.visual_score, last_known_r.visual_score)
+                                    mid_r.audio_score = max(mid_r.audio_score, last_known_r.audio_score)
+                                    mid_r.matched_platform = last_known_r.matched_platform
+                                    modified = True
+                                    logger.info(
+                                        "Content gap-fill (capture_id=%d): filled as '%s'",
+                                        mid_r.capture_id,
+                                        last_known_r.content_name
+                                    )
+                last_known_idx = idx
 
-            # Find dominant content name
-            dominant_name = max(counts, key=counts.get)
-            dominant_count = counts[dominant_name]
-
-            # Require that the dominant content appears in the majority of the window
-            majority_threshold = (window_size // 2) + 1
-            if dominant_count >= majority_threshold:
-                # If center is different from dominant, we smooth it!
-                if center.content_name != dominant_name:
-                    details = content_details[dominant_name]
-                    avg_conf = sum(details["confidences"]) / len(details["confidences"])
-                    avg_vis = sum(details["vis_scores"]) / len(details["vis_scores"])
-                    avg_aud = sum(details["aud_scores"]) / len(details["aud_scores"])
-                    avg_ocr = sum(details["ocr_scores"]) / len(details["ocr_scores"])
-                    avg_logo = sum(details["logo_scores"]) / len(details["logo_scores"])
-                    
-                    # Boost confidence score
-                    boosted_conf = max(center.confidence, avg_conf, 0.85)
-                    
-                    logger.info(
-                        "Smoothing transient match (capture_id=%d): '%s' -> '%s' (confidence boosted to %.2f)",
-                        center.capture_id,
-                        center.content_name,
-                        dominant_name,
-                        boosted_conf
-                    )
-                    
-                    center.content_name = dominant_name
-                    center.content_type = details["type"]
-                    center.confidence = boosted_conf
-                    center.visual_score = max(center.visual_score, avg_vis)
-                    center.audio_score = max(center.audio_score, avg_aud)
-                    center.ocr_score = max(center.ocr_score, avg_ocr)
-                    center.logo_score = max(center.logo_score, avg_logo)
-                    if details["platforms"]:
-                        center.matched_platform = details["platforms"][0]
+        # Pass 2: Transient/Flickering Smoothing
+        if len(records) >= window_size:
+            half = window_size // 2
+            for i in range(half, len(records) - half):
+                center = records[i]
+                window = records[i - half : i + half + 1]
+                
+                counts = {}
+                content_details = {}
+                for r in window:
+                    name = r.content_name
+                    is_unknown = name in ("Matching in progress...", "Unknown Content", "unknown", "") or r.content_type == "unknown"
+                    if is_unknown:
+                        continue
+                    counts[name] = counts.get(name, 0) + 1
+                    if name not in content_details:
+                        content_details[name] = {
+                            "type": r.content_type,
+                            "content_id": r.content_id,
+                            "series": r.series,
+                            "season": r.season,
+                            "episode": r.episode,
+                            "confidences": [],
+                            "vis_scores": [],
+                            "aud_scores": [],
+                            "ocr_scores": [],
+                            "logo_scores": [],
+                            "platforms": []
+                        }
                     else:
-                        center.matched_platform = "unknown"
-                    modified = True
+                        if content_details[name]["content_id"] is None and r.content_id is not None:
+                            content_details[name]["content_id"] = r.content_id
+                        if content_details[name]["series"] is None and r.series is not None:
+                            content_details[name]["series"] = r.series
+                        if content_details[name]["season"] is None and r.season is not None:
+                            content_details[name]["season"] = r.season
+                        if content_details[name]["episode"] is None and r.episode is not None:
+                            content_details[name]["episode"] = r.episode
+                            
+                    content_details[name]["confidences"].append(r.confidence)
+                    content_details[name]["vis_scores"].append(r.visual_score)
+                    content_details[name]["aud_scores"].append(r.audio_score)
+                    content_details[name]["ocr_scores"].append(r.ocr_score)
+                    content_details[name]["logo_scores"].append(r.logo_score)
+                    if r.matched_platform and r.matched_platform != "unknown":
+                        content_details[name]["platforms"].append(r.matched_platform)
+
+                if not counts:
+                    continue
+
+                dominant_name = max(counts, key=counts.get)
+                dominant_count = counts[dominant_name]
+
+                majority_threshold = (window_size // 2) + 1
+                if dominant_count >= majority_threshold:
+                    if center.content_name != dominant_name:
+                        details = content_details[dominant_name]
+                        avg_conf = sum(details["confidences"]) / len(details["confidences"])
+                        avg_vis = sum(details["vis_scores"]) / len(details["vis_scores"])
+                        avg_aud = sum(details["aud_scores"]) / len(details["aud_scores"])
+                        avg_ocr = sum(details["ocr_scores"]) / len(details["ocr_scores"])
+                        avg_logo = sum(details["logo_scores"]) / len(details["logo_scores"])
+                        
+                        boosted_conf = max(center.confidence, avg_conf, 0.85)
+                        
+                        logger.info(
+                            "Smoothing transient match (capture_id=%d): '%s' -> '%s' (confidence boosted to %.2f)",
+                            center.capture_id,
+                            center.content_name,
+                            dominant_name,
+                            boosted_conf
+                        )
+                        
+                        center.content_name = dominant_name
+                        center.content_type = details["type"]
+                        center.content_id = details["content_id"]
+                        center.series = details["series"]
+                        center.season = details["season"]
+                        center.episode = details["episode"]
+                        
+                        center.confidence = boosted_conf
+                        center.visual_score = max(center.visual_score, avg_vis)
+                        center.audio_score = max(center.audio_score, avg_aud)
+                        center.ocr_score = max(center.ocr_score, avg_ocr)
+                        center.logo_score = max(center.logo_score, avg_logo)
+                        if details["platforms"]:
+                            center.matched_platform = details["platforms"][0]
+                        else:
+                            center.matched_platform = "unknown"
+                        modified = True
 
         if modified:
             db.commit()
