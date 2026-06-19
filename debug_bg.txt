@@ -188398,3 +188398,808 @@ Processing capture: 52595
 Matched capture 52595 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
 Successfully committed transaction for captures: [52586, 52587, 52588, 52589, 52590, 52591, 52592, 52593, 52594, 52595]
 Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52596, 52597, 52598, 52599, 52600, 52601, 52602, 52603, 52604, 52605]
+Processing capture: 52596
+Matched capture 52596 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52597
+Matched capture 52597 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52598
+Matched capture 52598 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52599
+Matched capture 52599 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52600
+Matched capture 52600 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52601
+Matched capture 52601 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52602
+Matched capture 52602 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52603
+Matched capture 52603 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52604
+Matched capture 52604 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52605
+Matched capture 52605 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52596, 52597, 52598, 52599, 52600, 52601, 52602, 52603, 52604, 52605]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52606, 52607, 52608, 52609, 52610, 52611, 52612, 52613, 52614, 52615]
+Processing capture: 52606
+Matched capture 52606 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52607
+Matched capture 52607 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52608
+Matched capture 52608 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52609
+Matched capture 52609 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52610
+Matched capture 52610 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52611
+Matched capture 52611 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52612
+Matched capture 52612 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52613
+Matched capture 52613 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52614
+Matched capture 52614 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52615
+Matched capture 52615 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52606, 52607, 52608, 52609, 52610, 52611, 52612, 52613, 52614, 52615]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52616, 52617, 52618, 52619, 52620, 52621, 52622, 52623, 52624, 52625]
+Processing capture: 52616
+Matched capture 52616 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52617
+Matched capture 52617 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52618
+Matched capture 52618 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52619
+Matched capture 52619 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52620
+Matched capture 52620 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52621
+Matched capture 52621 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52622
+Matched capture 52622 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52623
+Matched capture 52623 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52624
+Matched capture 52624 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52625
+Matched capture 52625 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52616, 52617, 52618, 52619, 52620, 52621, 52622, 52623, 52624, 52625]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52626, 52627, 52628, 52629, 52630, 52631, 52632, 52633, 52634, 52635]
+Processing capture: 52626
+Matched capture 52626 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52627
+Matched capture 52627 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52628
+Matched capture 52628 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52629
+Matched capture 52629 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52630
+Matched capture 52630 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52631
+Matched capture 52631 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52632
+Matched capture 52632 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52633
+Matched capture 52633 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52634
+Matched capture 52634 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52635
+Matched capture 52635 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52626, 52627, 52628, 52629, 52630, 52631, 52632, 52633, 52634, 52635]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52636, 52637, 52638, 52639, 52640, 52641, 52642, 52643, 52644, 52645]
+Processing capture: 52636
+Matched capture 52636 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52637
+Matched capture 52637 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52638
+Matched capture 52638 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52639
+Matched capture 52639 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52640
+Matched capture 52640 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52641
+Matched capture 52641 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52642
+Matched capture 52642 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52643
+Matched capture 52643 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52644
+Matched capture 52644 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52645
+Matched capture 52645 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52636, 52637, 52638, 52639, 52640, 52641, 52642, 52643, 52644, 52645]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52646, 52647, 52648, 52649, 52650, 52651, 52652, 52653, 52654, 52655]
+Processing capture: 52646
+Matched capture 52646 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52647
+Matched capture 52647 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52648
+Matched capture 52648 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52649
+Matched capture 52649 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52650
+Matched capture 52650 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52651
+Matched capture 52651 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52652
+Matched capture 52652 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52653
+Matched capture 52653 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52654
+Matched capture 52654 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52655
+Matched capture 52655 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52646, 52647, 52648, 52649, 52650, 52651, 52652, 52653, 52654, 52655]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52656, 52657, 52658, 52659, 52660, 52661, 52662, 52663, 52664, 52665]
+Processing capture: 52656
+Matched capture 52656 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52657
+Matched capture 52657 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52658
+Matched capture 52658 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52659
+Matched capture 52659 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52660
+Matched capture 52660 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52661
+Matched capture 52661 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52662
+Matched capture 52662 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52663
+Matched capture 52663 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52664
+Matched capture 52664 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52665
+Matched capture 52665 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52656, 52657, 52658, 52659, 52660, 52661, 52662, 52663, 52664, 52665]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52666, 52667, 52668, 52669, 52670, 52671, 52672, 52673, 52674, 52675]
+Processing capture: 52666
+Matched capture 52666 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52667
+Matched capture 52667 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52668
+Matched capture 52668 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52669
+Matched capture 52669 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52670
+Matched capture 52670 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52671
+Matched capture 52671 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52672
+Matched capture 52672 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52673
+Matched capture 52673 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52674
+Matched capture 52674 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52675
+Matched capture 52675 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52666, 52667, 52668, 52669, 52670, 52671, 52672, 52673, 52674, 52675]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52676, 52677, 52678, 52679, 52680, 52681, 52682, 52683, 52684, 52685]
+Processing capture: 52676
+Matched capture 52676 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52677
+Matched capture 52677 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52678
+Matched capture 52678 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52679
+Matched capture 52679 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52680
+Matched capture 52680 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52681
+Matched capture 52681 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52682
+Matched capture 52682 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52683
+Matched capture 52683 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52684
+Matched capture 52684 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52685
+Matched capture 52685 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52676, 52677, 52678, 52679, 52680, 52681, 52682, 52683, 52684, 52685]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52686, 52687, 52688, 52689, 52690, 52691, 52692, 52693, 52694, 52695]
+Processing capture: 52686
+Matched capture 52686 to: Unknown Content (unknown) | Platform: youtube
+Processing capture: 52687
+Matched capture 52687 to: Unknown Content (unknown) | Platform: youtube
+Processing capture: 52688
+Matched capture 52688 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52689
+Matched capture 52689 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52690
+Matched capture 52690 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52691
+Matched capture 52691 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52692
+Matched capture 52692 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52693
+Matched capture 52693 to: Goyamart - Intro (series) | Platform: unknown
+Processing capture: 52694
+Matched capture 52694 to: Goyamart - Intro (series) | Platform: unknown
+Processing capture: 52695
+Matched capture 52695 to: Unknown Content (unknown) | Platform: unknown
+Successfully committed transaction for captures: [52686, 52687, 52688, 52689, 52690, 52691, 52692, 52693, 52694, 52695]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52696, 52697, 52698, 52699, 52700, 52701, 52702, 52703, 52704, 52705]
+Processing capture: 52696
+Matched capture 52696 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52697
+Matched capture 52697 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52698
+Matched capture 52698 to: Goyamart - Intro (series) | Platform: unknown
+Processing capture: 52699
+Matched capture 52699 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52700
+Matched capture 52700 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52701
+Matched capture 52701 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52702
+Matched capture 52702 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52703
+Matched capture 52703 to: Goyamart - Intro (series) | Platform: unknown
+Processing capture: 52704
+Matched capture 52704 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52705
+Matched capture 52705 to: Goyamart - Intro (series) | Platform: unknown
+Successfully committed transaction for captures: [52696, 52697, 52698, 52699, 52700, 52701, 52702, 52703, 52704, 52705]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52706, 52707, 52708, 52709, 52710, 52711, 52712, 52713, 52714, 52715]
+Processing capture: 52706
+Matched capture 52706 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52707
+Matched capture 52707 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52708
+Matched capture 52708 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52709
+Matched capture 52709 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52710
+Matched capture 52710 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52711
+Matched capture 52711 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52712
+Matched capture 52712 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52713
+Matched capture 52713 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52714
+Matched capture 52714 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52715
+Matched capture 52715 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52706, 52707, 52708, 52709, 52710, 52711, 52712, 52713, 52714, 52715]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52716, 52717, 52718, 52719, 52720, 52721, 52722, 52723, 52724, 52725]
+Processing capture: 52716
+Matched capture 52716 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52717
+Matched capture 52717 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52718
+Matched capture 52718 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52719
+Matched capture 52719 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52720
+Matched capture 52720 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52721
+Matched capture 52721 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52722
+Matched capture 52722 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52723
+Matched capture 52723 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52724
+Matched capture 52724 to: Goyamart S01E85 (series) | Platform: panarmenian_tv
+Processing capture: 52725
+Matched capture 52725 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52716, 52717, 52718, 52719, 52720, 52721, 52722, 52723, 52724, 52725]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52726, 52727, 52728, 52729, 52730, 52731, 52732, 52733, 52734, 52735]
+Processing capture: 52726
+Matched capture 52726 to: Goyamart S01E50 (series) | Platform: panarmenian_tv
+Processing capture: 52727
+Matched capture 52727 to: Goyamart - Intro (series) | Platform: panarmenian_tv
+Processing capture: 52728
+Matched capture 52728 to: Goyamart S01E91 (series) | Platform: panarmenian_tv
+Processing capture: 52729
+Matched capture 52729 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52730
+Matched capture 52730 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52731
+Matched capture 52731 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52732
+Matched capture 52732 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52733
+Matched capture 52733 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52734
+Matched capture 52734 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52735
+Matched capture 52735 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52726, 52727, 52728, 52729, 52730, 52731, 52732, 52733, 52734, 52735]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52736, 52737, 52738, 52739, 52740, 52741, 52742, 52743, 52744, 52745]
+Processing capture: 52736
+Matched capture 52736 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52737
+Matched capture 52737 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52738
+Matched capture 52738 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52739
+Matched capture 52739 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52740
+Matched capture 52740 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52741
+Matched capture 52741 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52742
+Matched capture 52742 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52743
+Matched capture 52743 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52744
+Matched capture 52744 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52745
+Matched capture 52745 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52736, 52737, 52738, 52739, 52740, 52741, 52742, 52743, 52744, 52745]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52746, 52747, 52748, 52749, 52750, 52751, 52752, 52753, 52754, 52755]
+Processing capture: 52746
+Matched capture 52746 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52747
+Matched capture 52747 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52748
+Matched capture 52748 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52749
+Matched capture 52749 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52750
+Matched capture 52750 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52751
+Matched capture 52751 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52752
+Matched capture 52752 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52753
+Matched capture 52753 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52754
+Matched capture 52754 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52755
+Matched capture 52755 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52746, 52747, 52748, 52749, 52750, 52751, 52752, 52753, 52754, 52755]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52756, 52757, 52758, 52759, 52760, 52761, 52762, 52763, 52764, 52765]
+Processing capture: 52756
+Matched capture 52756 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52757
+Matched capture 52757 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52758
+Matched capture 52758 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52759
+Matched capture 52759 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52760
+Matched capture 52760 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52761
+Matched capture 52761 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52762
+Matched capture 52762 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52763
+Matched capture 52763 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52764
+Matched capture 52764 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52765
+Matched capture 52765 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52756, 52757, 52758, 52759, 52760, 52761, 52762, 52763, 52764, 52765]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52766, 52767, 52768, 52769, 52770, 52771, 52772, 52773, 52774, 52775]
+Processing capture: 52766
+Matched capture 52766 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52767
+Matched capture 52767 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52768
+Matched capture 52768 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52769
+Matched capture 52769 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52770
+Matched capture 52770 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52771
+Matched capture 52771 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52772
+Matched capture 52772 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52773
+Matched capture 52773 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52774
+Matched capture 52774 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52775
+Matched capture 52775 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52766, 52767, 52768, 52769, 52770, 52771, 52772, 52773, 52774, 52775]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52776, 52777, 52778, 52779, 52780, 52781, 52782, 52783, 52784, 52785]
+Processing capture: 52776
+Matched capture 52776 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52777
+Matched capture 52777 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52778
+Matched capture 52778 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52779
+Matched capture 52779 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52780
+Matched capture 52780 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52781
+Matched capture 52781 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52782
+Matched capture 52782 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52783
+Matched capture 52783 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52784
+Matched capture 52784 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52785
+Matched capture 52785 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52776, 52777, 52778, 52779, 52780, 52781, 52782, 52783, 52784, 52785]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52786, 52787, 52788, 52789, 52790, 52791, 52792, 52793, 52794, 52795]
+Processing capture: 52786
+Matched capture 52786 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52787
+Matched capture 52787 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52788
+Matched capture 52788 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52789
+Matched capture 52789 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52790
+Matched capture 52790 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52791
+Matched capture 52791 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52792
+Matched capture 52792 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52793
+Matched capture 52793 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52794
+Matched capture 52794 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52795
+Matched capture 52795 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52786, 52787, 52788, 52789, 52790, 52791, 52792, 52793, 52794, 52795]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52796, 52797, 52798, 52799, 52800, 52801, 52802, 52803, 52804, 52805]
+Processing capture: 52796
+Matched capture 52796 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52797
+Matched capture 52797 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52798
+Matched capture 52798 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52799
+Matched capture 52799 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52800
+Matched capture 52800 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52801
+Matched capture 52801 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52802
+Matched capture 52802 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52803
+Matched capture 52803 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52804
+Matched capture 52804 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52805
+Matched capture 52805 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52796, 52797, 52798, 52799, 52800, 52801, 52802, 52803, 52804, 52805]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52806, 52807, 52808, 52809, 52810, 52811, 52812, 52813, 52814, 52815]
+Processing capture: 52806
+Matched capture 52806 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52807
+Matched capture 52807 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52808
+Matched capture 52808 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52809
+Matched capture 52809 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52810
+Matched capture 52810 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52811
+Matched capture 52811 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52812
+Matched capture 52812 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52813
+Matched capture 52813 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52814
+Matched capture 52814 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52815
+Matched capture 52815 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52806, 52807, 52808, 52809, 52810, 52811, 52812, 52813, 52814, 52815]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52816, 52817, 52818, 52819, 52820, 52821, 52822, 52823, 52824, 52825]
+Processing capture: 52816
+Matched capture 52816 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52817
+Matched capture 52817 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52818
+Matched capture 52818 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52819
+Matched capture 52819 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52820
+Matched capture 52820 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52821
+Matched capture 52821 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52822
+Matched capture 52822 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52823
+Matched capture 52823 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52824
+Matched capture 52824 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52825
+Matched capture 52825 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52816, 52817, 52818, 52819, 52820, 52821, 52822, 52823, 52824, 52825]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52826, 52827, 52828, 52829, 52830, 52831, 52832, 52833, 52834, 52835]
+Processing capture: 52826
+Matched capture 52826 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52827
+Matched capture 52827 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52828
+Matched capture 52828 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52829
+Matched capture 52829 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52830
+Matched capture 52830 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52831
+Matched capture 52831 to: Unknown Content (unknown) | Platform: unknown
+Processing capture: 52832
+Matched capture 52832 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52833
+Matched capture 52833 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52834
+Matched capture 52834 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52835
+Matched capture 52835 to: Goyamart S01E95 (series) | Platform: unknown
+Successfully committed transaction for captures: [52826, 52827, 52828, 52829, 52830, 52831, 52832, 52833, 52834, 52835]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52836, 52837, 52838, 52839, 52840, 52841, 52842, 52843, 52844, 52845]
+Processing capture: 52836
+Matched capture 52836 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52837
+Matched capture 52837 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52838
+Matched capture 52838 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52839
+Matched capture 52839 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52840
+Matched capture 52840 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52841
+Matched capture 52841 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52842
+Matched capture 52842 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52843
+Matched capture 52843 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52844
+Matched capture 52844 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52845
+Matched capture 52845 to: Goyamart S01E95 (series) | Platform: unknown
+Successfully committed transaction for captures: [52836, 52837, 52838, 52839, 52840, 52841, 52842, 52843, 52844, 52845]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52846, 52847, 52848, 52849, 52850, 52851, 52852, 52853, 52854, 52855]
+Processing capture: 52846
+Matched capture 52846 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52847
+Matched capture 52847 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52848
+Matched capture 52848 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52849
+Matched capture 52849 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52850
+Matched capture 52850 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52851
+Matched capture 52851 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52852
+Matched capture 52852 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52853
+Matched capture 52853 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52854
+Matched capture 52854 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52855
+Matched capture 52855 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52846, 52847, 52848, 52849, 52850, 52851, 52852, 52853, 52854, 52855]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52856, 52857, 52858, 52859, 52860, 52861, 52862, 52863, 52864, 52865]
+Processing capture: 52856
+Matched capture 52856 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52857
+Matched capture 52857 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52858
+Matched capture 52858 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52859
+Matched capture 52859 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52860
+Matched capture 52860 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52861
+Matched capture 52861 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52862
+Matched capture 52862 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52863
+Matched capture 52863 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52864
+Matched capture 52864 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52865
+Matched capture 52865 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52856, 52857, 52858, 52859, 52860, 52861, 52862, 52863, 52864, 52865]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52866, 52867, 52868, 52869, 52870, 52871, 52872, 52873, 52874, 52875]
+Processing capture: 52866
+Matched capture 52866 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52867
+Matched capture 52867 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52868
+Matched capture 52868 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52869
+Matched capture 52869 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52870
+Matched capture 52870 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52871
+Matched capture 52871 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52872
+Matched capture 52872 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52873
+Matched capture 52873 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52874
+Matched capture 52874 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52875
+Matched capture 52875 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52866, 52867, 52868, 52869, 52870, 52871, 52872, 52873, 52874, 52875]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52876, 52877, 52878, 52879, 52880, 52881, 52882, 52883, 52884, 52885]
+Processing capture: 52876
+Matched capture 52876 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52877
+Matched capture 52877 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52878
+Matched capture 52878 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52879
+Matched capture 52879 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52880
+Matched capture 52880 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52881
+Matched capture 52881 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52882
+Matched capture 52882 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52883
+Matched capture 52883 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52884
+Matched capture 52884 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52885
+Matched capture 52885 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52876, 52877, 52878, 52879, 52880, 52881, 52882, 52883, 52884, 52885]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52886, 52887, 52888, 52889, 52890, 52891, 52892, 52893, 52894, 52895]
+Processing capture: 52886
+Matched capture 52886 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52887
+Matched capture 52887 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52888
+Matched capture 52888 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52889
+Matched capture 52889 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52890
+Matched capture 52890 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52891
+Matched capture 52891 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52892
+Matched capture 52892 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52893
+Matched capture 52893 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52894
+Matched capture 52894 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52895
+Matched capture 52895 to: Goyamart S01E95 (series) | Platform: unknown
+Successfully committed transaction for captures: [52886, 52887, 52888, 52889, 52890, 52891, 52892, 52893, 52894, 52895]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52896, 52897, 52898, 52899, 52900, 52901, 52902, 52903, 52904, 52905]
+Processing capture: 52896
+Matched capture 52896 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52897
+Matched capture 52897 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52898
+Matched capture 52898 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52899
+Matched capture 52899 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52900
+Matched capture 52900 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52901
+Matched capture 52901 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52902
+Matched capture 52902 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52903
+Matched capture 52903 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52904
+Matched capture 52904 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52905
+Matched capture 52905 to: Goyamart S01E95 (series) | Platform: unknown
+Successfully committed transaction for captures: [52896, 52897, 52898, 52899, 52900, 52901, 52902, 52903, 52904, 52905]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52906, 52907, 52908, 52909, 52910, 52911, 52912, 52913, 52914, 52915]
+Processing capture: 52906
+Matched capture 52906 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52907
+Matched capture 52907 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52908
+Matched capture 52908 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52909
+Matched capture 52909 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52910
+Matched capture 52910 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52911
+Matched capture 52911 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52912
+Matched capture 52912 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52913
+Matched capture 52913 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52914
+Matched capture 52914 to: Goyamart S01E95 (series) | Platform: unknown
+Processing capture: 52915
+Matched capture 52915 to: Goyamart S01E95 (series) | Platform: unknown
+Successfully committed transaction for captures: [52906, 52907, 52908, 52909, 52910, 52911, 52912, 52913, 52914, 52915]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52916, 52917, 52918, 52919, 52920, 52921, 52922, 52923, 52924, 52925]
+Processing capture: 52916
+Matched capture 52916 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52917
+Matched capture 52917 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52918
+Matched capture 52918 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52919
+Matched capture 52919 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52920
+Matched capture 52920 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52921
+Matched capture 52921 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52922
+Matched capture 52922 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52923
+Matched capture 52923 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52924
+Matched capture 52924 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52925
+Matched capture 52925 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52916, 52917, 52918, 52919, 52920, 52921, 52922, 52923, 52924, 52925]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52926, 52927, 52928, 52929, 52930, 52931, 52932, 52933, 52934, 52935]
+Processing capture: 52926
+Matched capture 52926 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52927
+Matched capture 52927 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52928
+Matched capture 52928 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52929
+Matched capture 52929 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52930
+Matched capture 52930 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52931
+Matched capture 52931 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52932
+Matched capture 52932 to: Unknown Content (unknown) | Platform: panarmenian_tv
+Processing capture: 52933
+Matched capture 52933 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52934
+Matched capture 52934 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52935
+Matched capture 52935 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52926, 52927, 52928, 52929, 52930, 52931, 52932, 52933, 52934, 52935]
+Successfully rebuilt playback sessions for device: pi-agent
+Background task started for captures: [52936, 52937, 52938, 52939, 52940, 52941, 52942, 52943, 52944, 52945]
+Processing capture: 52936
+Matched capture 52936 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52937
+Matched capture 52937 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52938
+Matched capture 52938 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52939
+Matched capture 52939 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52940
+Matched capture 52940 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52941
+Matched capture 52941 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52942
+Matched capture 52942 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52943
+Matched capture 52943 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52944
+Matched capture 52944 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Processing capture: 52945
+Matched capture 52945 to: Goyamart S01E95 (series) | Platform: panarmenian_tv
+Successfully committed transaction for captures: [52936, 52937, 52938, 52939, 52940, 52941, 52942, 52943, 52944, 52945]
+Successfully rebuilt playback sessions for device: pi-agent
