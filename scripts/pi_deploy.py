@@ -117,6 +117,9 @@ def main() -> None:
         run(ssh, f"cd {args.remote_root} && . .venv/bin/activate && python -m pip install --upgrade pip")
         run(ssh, f"cd {args.remote_root} && . .venv/bin/activate && python -m pip install -e '.[pi]'")
 
+        # Run the permanent audio configuration script on the Pi
+        run(ssh, f"sudo bash {posixpath.join(args.remote_root, 'scripts', 'fix_pi_audio.sh')}")
+
         service = f"""[Unit]
 Description=Content Recognition Platform Edge Agent
 After=network.target tailscale.service
