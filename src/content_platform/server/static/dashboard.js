@@ -57,7 +57,35 @@ const elements = {
   addLibraryModal: document.getElementById('add-library-modal'),
   btnOpenAddLib: document.getElementById('btn-add-library'),
   closeAddModal: document.getElementById('close-add-modal'),
-  addLibraryForm: document.getElementById('add-library-form')
+  addLibraryForm: document.getElementById('add-library-form'),
+
+  // Ingest Modal
+  ingestModal: document.getElementById('ingest-backdrop'),
+  btnOpenIngest: document.getElementById('btn-ingest-local'),
+  btnCloseIngest: document.getElementById('close-ingest-modal'),
+  ingestForm: document.getElementById('ingest-form'),
+  ingestPrefill: document.getElementById('ingest-prefill'),
+  btnIngestScan: document.getElementById('btn-ingest-scan'),
+  ingestScanResult: document.getElementById('ingest-scan-result'),
+  ingestProgressContainer: document.getElementById('ingest-progress-container'),
+  ingestProgressBar: document.getElementById('ingest-progress-bar'),
+  ingestProgressText: document.getElementById('ingest-progress-text'),
+  ingestProgressEta: document.getElementById('ingest-progress-eta'),
+  ingestProgressFile: document.getElementById('ingest-progress-file'),
+  ingestProgressStatus: document.getElementById('ingest-progress-status'),
+
+  // Export Modal
+  exportModal: document.getElementById('export-modal'),
+  btnOpenExportCaptures: document.getElementById('btn-export-captures'),
+  btnOpenExportSessions: document.getElementById('btn-export-sessions'),
+  closeExportModal: document.getElementById('close-export-modal'),
+  exportForm: document.getElementById('export-form'),
+  exportTargetType: document.getElementById('export-target-type'),
+  exportRangeType: document.getElementById('export-range-type'),
+  exportCustomDates: document.getElementById('export-custom-dates'),
+  exportStartDate: document.getElementById('export-start-date'),
+  exportEndDate: document.getElementById('export-end-date'),
+  exportModalTitle: document.getElementById('export-modal-title')
 };
 
 // Tab Descriptions
@@ -200,6 +228,55 @@ function setupEventListeners() {
   const btnLoadLibraryPlat = document.getElementById('btn-load-library-plat');
   if (btnLoadLibraryPlat) {
     btnLoadLibraryPlat.addEventListener('click', loadAndRenderLibraryPlat);
+  }
+
+  // Ingestion Modal Listeners
+  if (elements.btnOpenIngest) {
+    elements.btnOpenIngest.addEventListener('click', showIngestModal);
+  }
+  if (elements.btnCloseIngest) {
+    elements.btnCloseIngest.addEventListener('click', hideIngestModal);
+  }
+  if (elements.ingestModal) {
+    elements.ingestModal.addEventListener('click', (e) => {
+      if (e.target === elements.ingestModal) hideIngestModal();
+    });
+  }
+  if (elements.btnIngestScan) {
+    elements.btnIngestScan.addEventListener('click', handleIngestScan);
+  }
+  if (elements.ingestForm) {
+    elements.ingestForm.addEventListener('submit', handleIngestSubmit);
+  }
+  if (elements.ingestPrefill) {
+    elements.ingestPrefill.addEventListener('change', handlePrefillChange);
+  }
+
+  const targetTypeRadios = document.querySelectorAll('input[name="ingest-target-type"]');
+  targetTypeRadios.forEach(radio => {
+    radio.addEventListener('change', handleTargetTypeChange);
+  });
+
+  // Export Modal Listeners
+  if (elements.btnOpenExportCaptures) {
+    elements.btnOpenExportCaptures.addEventListener('click', () => showExportModal('captures'));
+  }
+  if (elements.btnOpenExportSessions) {
+    elements.btnOpenExportSessions.addEventListener('click', () => showExportModal('sessions'));
+  }
+  if (elements.closeExportModal) {
+    elements.closeExportModal.addEventListener('click', hideExportModal);
+  }
+  if (elements.exportModal) {
+    elements.exportModal.addEventListener('click', (e) => {
+      if (e.target === elements.exportModal) hideExportModal();
+    });
+  }
+  if (elements.exportRangeType) {
+    elements.exportRangeType.addEventListener('change', handleExportRangeTypeChange);
+  }
+  if (elements.exportForm) {
+    elements.exportForm.addEventListener('submit', handleExportSubmit);
   }
 }
 
@@ -1146,3 +1223,385 @@ window.toggleLibGroup = function(groupId) {
     chevron.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
   }
 };
+
+let ingestPollInterval = null;
+
+async function showIngestModal() {
+  if (elements.ingestModal) {
+    elements.ingestModal.classList.add('active');
+  }
+  // Reset target type mode to directory on open
+  const dirRadio = document.querySelector('input[name="ingest-target-type"][value="directory"]');
+  if (dirRadio) {
+    dirRadio.checked = true;
+    handleTargetTypeChange({ target: dirRadio });
+  }
+  
+  // Reset scan result and progress container
+  if (elements.ingestScanResult) {
+    elements.ingestScanResult.style.display = 'none';
+    elements.ingestScanResult.textContent = '';
+  }
+  
+  // Populate previously added content dropdown
+  try {
+    const res = await fetch('/api/v1/ingest/series-suggest');
+    if (res.ok) {
+      const suggestions = await res.json();
+      if (elements.ingestPrefill) {
+        // Clear previous options except the first one
+        elements.ingestPrefill.innerHTML = '<option value="">-- Select to Prefill Metadata --</option>';
+        suggestions.forEach(item => {
+          const option = document.createElement('option');
+          option.value = JSON.stringify(item);
+          option.textContent = `${item.series_name} (${item.content_type})`;
+          elements.ingestPrefill.appendChild(option);
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching series suggestions:', error);
+  }
+
+  // Check current status immediately. If already ingesting, show progress and start polling
+  checkIngestStatusOnOpen();
+}
+
+function hideIngestModal() {
+  if (elements.ingestModal) {
+    elements.ingestModal.classList.remove('active');
+  }
+}
+
+function handleTargetTypeChange(e) {
+  const isDir = e.target.value === 'directory';
+  const pathLabel = document.getElementById('ingest-path-label');
+  const pathInput = document.getElementById('ingest-path');
+  const seasonGroup = document.getElementById('ingest-season-group');
+  const typeSelect = document.getElementById('ingest-type');
+
+  if (isDir) {
+    if (pathLabel) pathLabel.textContent = 'Server Directory Path';
+    if (pathInput) pathInput.placeholder = 'e.g. F:\\YT_content_data\\Urishi Yntaniqy';
+    if (seasonGroup) seasonGroup.style.display = 'block';
+    if (typeSelect) typeSelect.value = 'series';
+  } else {
+    if (pathLabel) pathLabel.textContent = 'Single Video File Path';
+    if (pathInput) pathInput.placeholder = 'e.g. F:\\YT_content_data\\Urishi Yntaniqy\\episode_01.mp4';
+    if (seasonGroup) seasonGroup.style.display = 'none';
+    if (typeSelect) typeSelect.value = 'movie';
+  }
+}
+
+function handlePrefillChange(e) {
+  const val = e.target.value;
+  if (!val) return;
+  try {
+    const item = JSON.parse(val);
+    const titleInput = document.getElementById('ingest-title');
+    const typeInput = document.getElementById('ingest-type');
+    const platformInput = document.getElementById('ingest-platform');
+    
+    if (titleInput) titleInput.value = item.series_name || '';
+    if (typeInput) typeInput.value = item.content_type || 'series';
+    if (platformInput) platformInput.value = item.platform_id || 'unknown';
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function handleIngestScan() {
+  const pathInput = document.getElementById('ingest-path');
+  if (!pathInput || !pathInput.value.trim()) {
+    showToast('Scan Error', 'Please provide a valid directory or file path.', 'warning');
+    return;
+  }
+  
+  if (elements.ingestScanResult) {
+    elements.ingestScanResult.style.display = 'block';
+    elements.ingestScanResult.style.color = 'var(--text-secondary)';
+    elements.ingestScanResult.textContent = 'Scanning server directory...';
+  }
+  
+  try {
+    const res = await fetch('/api/v1/ingest/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: pathInput.value.trim() })
+    });
+    
+    if (!res.ok) {
+      const errData = await res.json();
+      throw new Error(errData.detail || 'Scan failed');
+    }
+    
+    const data = await res.json();
+    if (elements.ingestScanResult) {
+      const mins = Math.floor(data.est_seconds / 60);
+      const secs = data.est_seconds % 60;
+      let timeStr = '';
+      if (mins > 0) {
+        timeStr = `${mins}m ${secs}s`;
+      } else {
+        timeStr = `${secs}s`;
+      }
+      elements.ingestScanResult.style.color = '#10b981';
+      elements.ingestScanResult.innerHTML = `
+        <strong>Scan Complete:</strong> Found <strong>${data.total_files}</strong> video files.<br>
+        <strong>Estimated processing time:</strong> ~${timeStr} (${data.est_seconds} seconds total)
+      `;
+    }
+  } catch (error) {
+    console.error('Scan error:', error);
+    if (elements.ingestScanResult) {
+      elements.ingestScanResult.style.color = '#f87171';
+      elements.ingestScanResult.textContent = `Error: ${error.message}`;
+    }
+  }
+}
+
+async function handleIngestSubmit(e) {
+  e.preventDefault();
+  
+  const path = document.getElementById('ingest-path').value.trim();
+  const title = document.getElementById('ingest-title').value.trim();
+  const contentType = document.getElementById('ingest-type').value;
+  const season = parseInt(document.getElementById('ingest-season').value) || 1;
+  const intro = parseInt(document.getElementById('ingest-intro').value) || 0;
+  const platform = document.getElementById('ingest-platform').value.trim() || 'unknown';
+  
+  const submitBtn = document.getElementById('btn-ingest-submit');
+  if (submitBtn) submitBtn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/v1/ingest/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path: path,
+        content_type: contentType,
+        title: title,
+        season: season,
+        intro_duration: intro,
+        platform: platform
+      })
+    });
+    
+    if (!res.ok) {
+      const errData = await res.json();
+      throw new Error(errData.detail || 'Failed to start ingestion');
+    }
+    
+    showToast('Ingestion Started', 'Data is being ingested in the background.', 'success');
+    
+    if (elements.ingestProgressContainer) {
+      elements.ingestProgressContainer.style.display = 'block';
+    }
+    
+    startIngestPolling();
+    
+  } catch (error) {
+    showToast('Ingest Error', error.message, 'danger');
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+function startIngestPolling() {
+  if (ingestPollInterval) clearInterval(ingestPollInterval);
+  pollIngestStatus(); // Run once immediately
+  ingestPollInterval = setInterval(pollIngestStatus, 2000);
+}
+
+async function checkIngestStatusOnOpen() {
+  try {
+    const res = await fetch('/api/v1/ingest/status');
+    if (res.ok) {
+      const status = await res.json();
+      if (status.status === 'ingesting' || status.status === 'scanning') {
+        if (elements.ingestProgressContainer) {
+          elements.ingestProgressContainer.style.display = 'block';
+        }
+        const submitBtn = document.getElementById('btn-ingest-submit');
+        if (submitBtn) submitBtn.disabled = true;
+        startIngestPolling();
+      }
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function pollIngestStatus() {
+  try {
+    const res = await fetch('/api/v1/ingest/status');
+    if (!res.ok) return;
+    
+    const data = await res.json();
+    
+    const submitBtn = document.getElementById('btn-ingest-submit');
+    
+    if (elements.ingestProgressBar) {
+      elements.ingestProgressBar.style.width = `${data.percent}%`;
+    }
+    if (elements.ingestProgressText) {
+      elements.ingestProgressText.textContent = `${data.percent}% (${data.current_index}/${data.total_files} files)`;
+    }
+    if (elements.ingestProgressFile) {
+      elements.ingestProgressFile.textContent = data.current_file ? `Processing: ${data.current_file}` : '';
+    }
+    if (elements.ingestProgressStatus) {
+      elements.ingestProgressStatus.textContent = data.message || `Status: ${data.status}`;
+    }
+    
+    if (elements.ingestProgressEta) {
+      if (data.status === 'ingesting') {
+        const mins = Math.floor(data.time_remaining / 60);
+        const secs = Math.floor(data.time_remaining % 60);
+        elements.ingestProgressEta.textContent = `ETA: ${mins}m ${secs}s remaining`;
+      } else if (data.status === 'completed') {
+        elements.ingestProgressEta.textContent = 'Finished';
+      } else {
+        elements.ingestProgressEta.textContent = 'Calculating...';
+      }
+    }
+    
+    if (data.status === 'completed' || data.status === 'failed' || data.status === 'idle') {
+      if (ingestPollInterval) {
+        clearInterval(ingestPollInterval);
+        ingestPollInterval = null;
+      }
+      if (submitBtn) submitBtn.disabled = false;
+      
+      if (data.status === 'completed') {
+        showToast('Ingestion Complete', 'Content library is updated and FAISS indexes reloaded.', 'success');
+        // Refresh content library table
+        fetchData();
+      } else if (data.status === 'failed') {
+        showToast('Ingestion Failed', data.message || 'An error occurred during ingestion.', 'danger');
+      }
+    }
+  } catch (error) {
+    console.error('Error polling ingest status:', error);
+  }
+}
+
+// Export Modal Helper Functions
+function showExportModal(targetType) {
+  if (!elements.exportModal || !elements.exportTargetType) return;
+  elements.exportTargetType.value = targetType;
+  
+  if (elements.exportModalTitle) {
+    elements.exportModalTitle.textContent = targetType === 'captures' ? 'Export Real-Time Captures' : 'Export Playback Sessions';
+  }
+  
+  if (elements.exportRangeType) {
+    elements.exportRangeType.value = targetType === 'captures' ? 'last_24h' : 'last_7d';
+    handleExportRangeTypeChange();
+  }
+  
+  // Prefill custom dates with default range in case they choose custom
+  const now = new Date();
+  if (elements.exportEndDate) {
+    elements.exportEndDate.value = formatDateTimeForInput(now);
+  }
+  if (elements.exportStartDate) {
+    const start = new Date();
+    if (targetType === 'captures') {
+      start.setHours(now.getHours() - 24);
+    } else {
+      start.setDate(now.getDate() - 7);
+    }
+    elements.exportStartDate.value = formatDateTimeForInput(start);
+  }
+  
+  elements.exportModal.classList.add('active');
+}
+
+function hideExportModal() {
+  if (elements.exportModal) {
+    elements.exportModal.classList.remove('active');
+  }
+}
+
+function handleExportRangeTypeChange() {
+  if (!elements.exportRangeType || !elements.exportCustomDates) return;
+  if (elements.exportRangeType.value === 'custom') {
+    elements.exportCustomDates.style.display = 'block';
+  } else {
+    elements.exportCustomDates.style.display = 'none';
+  }
+}
+
+function formatDateTimeForInput(date) {
+  const pad = (num) => String(num).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  const MM = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const mm = pad(date.getMinutes());
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
+}
+
+async function handleExportSubmit(e) {
+  e.preventDefault();
+  
+  const targetType = elements.exportTargetType.value;
+  const rangeType = elements.exportRangeType.value;
+  
+  let startStr = '';
+  let endStr = '';
+  
+  if (rangeType === 'last_24h') {
+    const now = new Date();
+    const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    startStr = start.toISOString();
+    endStr = now.toISOString();
+  } else if (rangeType === 'last_7d') {
+    const now = new Date();
+    const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    startStr = start.toISOString();
+    endStr = now.toISOString();
+  } else if (rangeType === 'custom') {
+    const startVal = elements.exportStartDate.value;
+    const endVal = elements.exportEndDate.value;
+    if (!startVal || !endVal) {
+      showToast('Validation Error', 'Please select both start and end date/time.', 'warning');
+      return;
+    }
+    startStr = new Date(startVal).toISOString();
+    endStr = new Date(endVal).toISOString();
+  }
+  
+  let url = '';
+  let filename = '';
+  if (targetType === 'captures') {
+    url = `/api/v1/captures/export?start_date=${encodeURIComponent(startStr)}&end_date=${encodeURIComponent(endStr)}`;
+    filename = `realtime_captures_${rangeType}.csv`;
+  } else {
+    url = `/api/v1/analytics/sessions/export?start_date=${encodeURIComponent(startStr)}&end_date=${encodeURIComponent(endStr)}`;
+    filename = `playback_sessions_${rangeType}.csv`;
+  }
+  
+  showToast('Exporting', 'Generating CSV report...', 'info');
+  hideExportModal();
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || 'Export failed');
+    }
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+    showToast('Success', 'CSV downloaded successfully.', 'success');
+  } catch (error) {
+    showToast('Export Error', error.message, 'danger');
+  }
+}

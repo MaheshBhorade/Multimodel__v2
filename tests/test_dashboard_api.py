@@ -181,3 +181,42 @@ def test_vector_store_fallback() -> None:
     adapter.delete_reference("test-fallback-id")
     res_after = adapter.search_visual([1.0] * 64, limit=1)
     assert len(res_after) == 0
+
+
+def test_export_captures_csv() -> None:
+    with TestClient(app) as client:
+        # Test default range export
+        response = client.get("/api/v1/captures/export")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/csv; charset=utf-8"
+        assert "attachment; filename=realtime_captures.csv" in response.headers["content-disposition"]
+        csv_content = response.text
+        assert "Capture ID" in csv_content
+        assert "Device ID" in csv_content
+
+        # Test custom range export
+        start_date = "2026-06-22T00:00:00Z"
+        end_date = "2026-06-22T23:59:59Z"
+        response_custom = client.get(f"/api/v1/captures/export?start_date={start_date}&end_date={end_date}")
+        assert response_custom.status_code == 200
+        assert response_custom.headers["content-type"] == "text/csv; charset=utf-8"
+
+
+def test_export_sessions_csv() -> None:
+    with TestClient(app) as client:
+        # Test default range export
+        response = client.get("/api/v1/analytics/sessions/export")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/csv; charset=utf-8"
+        assert "attachment; filename=playback_sessions.csv" in response.headers["content-disposition"]
+        csv_content = response.text
+        assert "Session ID" in csv_content
+        assert "Device ID" in csv_content
+
+        # Test custom range export
+        start_date = "2026-06-22T00:00:00Z"
+        end_date = "2026-06-22T23:59:59Z"
+        response_custom = client.get(f"/api/v1/analytics/sessions/export?start_date={start_date}&end_date={end_date}")
+        assert response_custom.status_code == 200
+        assert response_custom.headers["content-type"] == "text/csv; charset=utf-8"
+

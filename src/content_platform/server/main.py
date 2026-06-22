@@ -1,12 +1,16 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import csv
+from datetime import datetime, timedelta
+import io
 import json
 from pathlib import Path
 import uuid
 
 import uvicorn
 from fastapi import Depends, FastAPI, File, Form, Request, UploadFile, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session, joinedload
@@ -173,20 +177,24 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                 # Do not run content matching to prevent false detections from recommended thumbnails.
                 OTT_PLATFORMS = {"youtube", "uplay", "netflix", "prime_video", "sonyliv", "jiohotstar", "zee5", "ott"}
                 if direct_plat_match and matched_plat in OTT_PLATFORMS:
-                    from content_platform.shared.models import RecognitionResult, MatchBreakdown
-                    result = RecognitionResult(
-                        content_name="Unknown Content",
-                        content_type="unknown",
-                        confidence=0.0,
-                        breakdown=MatchBreakdown(
-                            visual_score=0.0,
-                            audio_score=0.0,
-                            ocr_score=0.0,
-                            logo_score=0.0
-                        ),
-                        matched_channel=None,
-                        playback_position=None
-                    )
+                    content_result = match_content(db, single_payload, platform_id=matched_plat)
+                    if content_result and content_result.confidence >= 0.55:
+                        result = content_result
+                    else:
+                        from content_platform.shared.models import RecognitionResult, MatchBreakdown
+                        result = RecognitionResult(
+                            content_name="Unknown Content",
+                            content_type="unknown",
+                            confidence=0.0,
+                            breakdown=MatchBreakdown(
+                                visual_score=content_result.breakdown.visual_score if content_result else 0.0,
+                                audio_score=content_result.breakdown.audio_score if content_result else 0.0,
+                                ocr_score=content_result.breakdown.ocr_score if content_result else 0.0,
+                                logo_score=content_result.breakdown.logo_score if content_result else 0.0
+                            ),
+                            matched_channel=None,
+                            playback_position=None
+                        )
                 else:
                     result = match_content(db, single_payload, platform_id=matched_plat)
 
@@ -237,6 +245,19 @@ def process_matching_background(capture_ids: list[int], payload: FingerprintPayl
                     playback_position=result.playback_position,
                 )
                 db.add(record)
+                
+                # Log final match
+                match_log = (
+                    f"MATCH COMPLETE\n"
+                    f"capture={capture.id}\n"
+                    f"content={result.content_name}\n"
+                    f"confidence={result.confidence:.4f}\n"
+                    f"visual={result.breakdown.visual_score:.4f}\n"
+                    f"audio={result.breakdown.audio_score:.4f}\n"
+                    f"logo={final_logo_score:.4f}"
+                )
+                print(match_log, flush=True)
+                logger.info(match_log)
                 
                 # Update capture status
                 capture.status = "matched"
@@ -449,6 +470,43 @@ def list_captures(
             for c in captures
         ]
     }
+
+
+@app.get("/api/v1/captures/{capture_id}/result", response_model=RecognitionResult)
+def get_capture_result(capture_id: int, db: Session = Depends(get_db)) -> RecognitionResult:
+    from content_platform.server.models import RecognitionResultRecord
+    from content_platform.shared.models import RecognitionResult, MatchBreakdown
+    record = db.query(RecognitionResultRecord).filter(RecognitionResultRecord.capture_id == capture_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Result not found for capture")
+        
+    # Map custom categories if not present in allowed types
+    content_type = record.content_type
+    allowed_types = ["channel", "advertisement", "movie", "series", "episode", "ott", "music", "unknown"]
+    if content_type not in allowed_types:
+        if content_type == "song":
+            content_type = "music"
+        else:
+            content_type = "unknown"
+
+    return RecognitionResult(
+        content_id=record.content_id,
+        content_name=record.content_name,
+        content_type=content_type,
+        confidence=record.confidence,
+        breakdown=MatchBreakdown(
+            visual_score=record.visual_score,
+            audio_score=record.audio_score,
+            ocr_score=record.ocr_score,
+            logo_score=record.logo_score
+        ),
+        matched_channel=record.matched_channel,
+        playback_position=record.playback_position,
+        platform=record.matched_platform,
+        series=record.series,
+        season=record.season,
+        episode=record.episode
+    )
 
 
 @app.get("/api/v1/library")
@@ -878,12 +936,45 @@ import io
 from fastapi.responses import StreamingResponse
 
 @app.get("/api/v1/analytics/sessions/export")
-def export_sessions_csv(db: Session = Depends(get_db)):
-    sessions = (
-        db.query(PlaybackSession)
-        .order_by(PlaybackSession.start_time.desc())
-        .all()
-    )
+def export_sessions_csv(
+    db: Session = Depends(get_db),
+    start_date: str | None = None,
+    end_date: str | None = None
+):
+    query = db.query(PlaybackSession)
+    
+    if start_date:
+        try:
+            clean_start = start_date[:-1] if start_date.endswith("Z") else start_date
+            if "T" in clean_start:
+                start_dt = datetime.fromisoformat(clean_start)
+            else:
+                start_dt = datetime.strptime(clean_start, "%Y-%m-%d")
+            if start_dt.tzinfo is not None:
+                start_dt = start_dt.replace(tzinfo=None)
+            query = query.filter(PlaybackSession.start_time >= start_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD or ISO format.")
+            
+    if end_date:
+        try:
+            clean_end = end_date[:-1] if end_date.endswith("Z") else end_date
+            if "T" in clean_end:
+                end_dt = datetime.fromisoformat(clean_end)
+            else:
+                end_dt = datetime.strptime(clean_end, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999)
+            if end_dt.tzinfo is not None:
+                end_dt = end_dt.replace(tzinfo=None)
+            query = query.filter(PlaybackSession.start_time <= end_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD or ISO format.")
+
+    # Default to last 7 days for sessions to prevent OOM
+    if not start_date and not end_date:
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        query = query.filter(PlaybackSession.start_time >= week_ago)
+        
+    sessions = query.order_by(PlaybackSession.start_time.desc()).all()
     
     output = io.StringIO()
     writer = csv.writer(output)
@@ -913,13 +1004,45 @@ def export_sessions_csv(db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/captures/export")
-def export_captures_csv(db: Session = Depends(get_db)):
-    captures = (
-        db.query(Capture)
-        .outerjoin(RecognitionResultRecord, Capture.id == RecognitionResultRecord.capture_id)
-        .order_by(Capture.captured_at.desc())
-        .all()
-    )
+def export_captures_csv(
+    db: Session = Depends(get_db),
+    start_date: str | None = None,
+    end_date: str | None = None
+):
+    query = db.query(Capture).outerjoin(RecognitionResultRecord, Capture.id == RecognitionResultRecord.capture_id)
+    
+    if start_date:
+        try:
+            clean_start = start_date[:-1] if start_date.endswith("Z") else start_date
+            if "T" in clean_start:
+                start_dt = datetime.fromisoformat(clean_start)
+            else:
+                start_dt = datetime.strptime(clean_start, "%Y-%m-%d")
+            if start_dt.tzinfo is not None:
+                start_dt = start_dt.replace(tzinfo=None)
+            query = query.filter(Capture.captured_at >= start_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD or ISO format.")
+            
+    if end_date:
+        try:
+            clean_end = end_date[:-1] if end_date.endswith("Z") else end_date
+            if "T" in clean_end:
+                end_dt = datetime.fromisoformat(clean_end)
+            else:
+                end_dt = datetime.strptime(clean_end, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999)
+            if end_dt.tzinfo is not None:
+                end_dt = end_dt.replace(tzinfo=None)
+            query = query.filter(Capture.captured_at <= end_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD or ISO format.")
+
+    # Default to last 24 hours of captures to prevent OOM
+    if not start_date and not end_date:
+        day_ago = datetime.utcnow() - timedelta(days=1)
+        query = query.filter(Capture.captured_at >= day_ago)
+        
+    captures = query.order_by(Capture.captured_at.desc()).all()
     
     output = io.StringIO()
     writer = csv.writer(output)
@@ -958,6 +1081,412 @@ def export_captures_csv(db: Session = Depends(get_db)):
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=realtime_captures.csv"}
     )
+
+
+# ----------------------------------------------------------------------
+# SERVER-SIDE VIDEO INGESTION API
+# ----------------------------------------------------------------------
+import threading
+import time
+import re
+import cv2
+import numpy as np
+
+class IngestScanPayload(BaseModel):
+    path: str
+
+class IngestStartPayload(BaseModel):
+    path: str
+    content_type: str  # "series" or "movie"
+    title: str
+    season: int | None = 1
+    platform: str | None = "unknown"
+    intro_duration: int | None = 0
+    language: str | None = None
+    genre: str | None = None
+
+ingest_lock = threading.Lock()
+ingest_state = {
+    "status": "idle",  # idle, scanning, ingesting, completed, failed
+    "message": "",
+    "current_file": "",
+    "current_index": 0,
+    "total_files": 0,
+    "percent": 0.0,
+    "time_elapsed": 0.0,
+    "time_remaining": 0.0,
+    "start_time": 0.0
+}
+
+def load_audio_via_ffmpeg(video_path: Path, duration: float = None) -> tuple[np.ndarray, int]:
+    """Helper to extract audio to a temporary WAV and load it with librosa."""
+    import tempfile
+    import subprocess
+    import os
+    import librosa
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+        tmp_path = tmp_wav.name
+    try:
+        ffmpeg_cmd = ["ffmpeg", "-y", "-i", str(video_path)]
+        if duration:
+            ffmpeg_cmd += ["-t", str(duration)]
+        ffmpeg_cmd += ["-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", tmp_path]
+        subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        audio, sr = librosa.load(tmp_path, sr=16000, mono=True)
+        return audio, sr
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+def bg_ingest_worker(
+    path: str,
+    content_type: str,
+    title: str,
+    season: int | None,
+    platform: str | None,
+    intro_duration: int | None,
+    language: str | None,
+    genre: str | None
+):
+    global ingest_state
+    
+    from content_platform.server.db import SessionLocal
+    from content_platform.server.models import Content, ContentSegment
+    from content_platform.fingerprint.unified import UnifiedFingerprinter
+    from content_platform.fingerprint.embeddings import DeepEmbeddingsExtractor
+    from content_platform.server.faiss_index import FAISSIndex
+    from content_platform.server.matching import force_reload_faiss_indexes
+    
+    FAISS_INDEX_DIR = Path("runtime/faiss")
+    VISUAL_INDEX_PATH = FAISS_INDEX_DIR / "visual.index"
+    VISUAL_META_PATH = FAISS_INDEX_DIR / "visual_meta.json"
+    AUDIO_INDEX_PATH = FAISS_INDEX_DIR / "audio.index"
+    AUDIO_META_PATH = FAISS_INDEX_DIR / "audio_meta.json"
+    FAISS_VISUAL_DIM = 960
+    FAISS_AUDIO_DIM = 130
+    SEGMENT_SECONDS = 10
+    
+    try:
+        input_path = Path(path)
+        video_extensions = (".mp4", ".mkv", ".avi", ".mov", ".flv", ".webm")
+        video_files = []
+        if input_path.is_file():
+            if input_path.suffix.lower() in video_extensions:
+                video_files.append(input_path)
+        else:
+            for file in sorted(input_path.rglob("*")):
+                if file.is_file() and file.suffix.lower() in video_extensions:
+                    video_files.append(file)
+                    
+        # Sort video files by episode number
+        def get_episode_num(name):
+            match = re.search(r"(?:episode|ep|ep\.)\s*(\d+)", name, re.IGNORECASE)
+            return int(match.group(1)) if match else 0
+        video_files = sorted(video_files, key=lambda x: get_episode_num(x.name))
+        
+        total_files = len(video_files)
+        if total_files == 0:
+            with ingest_lock:
+                ingest_state["status"] = "failed"
+                ingest_state["message"] = "No valid video files found at path."
+            return
+            
+        with ingest_lock:
+            ingest_state["status"] = "ingesting"
+            ingest_state["total_files"] = total_files
+            ingest_state["current_index"] = 0
+            ingest_state["start_time"] = time.time()
+            
+        # Load existing FAISS indexes
+        if VISUAL_INDEX_PATH.exists() and AUDIO_INDEX_PATH.exists():
+            visual_idx = FAISSIndex.load(str(VISUAL_INDEX_PATH), str(VISUAL_META_PATH), dim=FAISS_VISUAL_DIM, gpu=True)
+            audio_idx = FAISSIndex.load(str(AUDIO_INDEX_PATH), str(AUDIO_META_PATH), dim=FAISS_AUDIO_DIM, gpu=True)
+        else:
+            visual_idx = FAISSIndex(dim=FAISS_VISUAL_DIM, gpu=True)
+            audio_idx = FAISSIndex(dim=FAISS_AUDIO_DIM, gpu=True)
+            
+        db = SessionLocal()
+        
+        # 1. Ingest Intro once if series and intro_duration > 0
+        if content_type == "series" and intro_duration and intro_duration > 0:
+            intro_content_id = f"series-{title.lower().replace(' ', '_')}-intro"
+            intro_title = f"{title} - Intro"
+            existing_intro = db.query(Content).filter(Content.content_id == intro_content_id).first()
+            if not existing_intro:
+                with ingest_lock:
+                    ingest_state["message"] = "Ingesting global intro..."
+                db_intro = Content(
+                    content_id=intro_content_id,
+                    platform_id="global",
+                    title=intro_title,
+                    content_type="series",
+                    series_name=title,
+                    season_number=None,
+                    episode_number=None
+                )
+                db.add(db_intro)
+                db.flush()
+                
+                # Extract segment for intro
+                first_video = video_files[0]
+                cap = cv2.VideoCapture(str(first_video))
+                audio, sr = load_audio_via_ffmpeg(first_video, duration=float(intro_duration))
+                
+                for sec in range(0, intro_duration, SEGMENT_SECONDS):
+                    segment_index = sec // SEGMENT_SECONDS
+                    frame_number = int(sec * cap.get(cv2.CAP_PROP_FPS))
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+                    ret, frame = cap.read()
+                    if not ret:
+                        continue
+                        
+                    visual_fp = DeepEmbeddingsExtractor.extract_visual(frame)
+                    if len(visual_fp) != FAISS_VISUAL_DIM:
+                        continue
+                        
+                    start_audio = sec * sr
+                    end_audio = min(len(audio), (sec + SEGMENT_SECONDS) * sr)
+                    audio_chunk = audio[start_audio:end_audio]
+                    if len(audio_chunk) < 100:
+                        audio_chunk = np.zeros(sr * SEGMENT_SECONDS, dtype=np.float32)
+                        
+                    audio_fp = UnifiedFingerprinter.audio_fingerprint(audio_chunk, sr)
+                    if len(audio_fp) != FAISS_AUDIO_DIM:
+                        continue
+                        
+                    db_item = ContentSegment(
+                        content_id=intro_content_id,
+                        segment_index=segment_index,
+                        segment_offset=sec,
+                        visual_fp=json.dumps(visual_fp),
+                        audio_fp=json.dumps(audio_fp)
+                    )
+                    db.add(db_item)
+                    db.flush()
+                    
+                    meta = {
+                        "content_id": intro_content_id,
+                        "segment_index": segment_index,
+                        "segment_offset": sec
+                    }
+                    visual_idx.add(np.array(visual_fp, dtype=np.float32).reshape(1, -1), [meta])
+                    audio_idx.add(np.array(audio_fp, dtype=np.float32).reshape(1, -1), [meta])
+                cap.release()
+                db.commit()
+                
+        # 2. Ingest episodes/videos
+        for idx, video_file in enumerate(video_files):
+            with ingest_lock:
+                ingest_state["current_file"] = video_file.name
+                ingest_state["current_index"] = idx + 1
+                ingest_state["percent"] = round((idx / total_files) * 100, 1)
+                elapsed = time.time() - ingest_state["start_time"]
+                ingest_state["time_elapsed"] = round(elapsed, 1)
+                if idx > 0:
+                    per_file = elapsed / idx
+                    ingest_state["time_remaining"] = round(per_file * (total_files - idx), 1)
+                else:
+                    ingest_state["time_remaining"] = round(25.0 * (total_files - idx), 1)
+                    
+            if content_type == "series":
+                ep_num = get_episode_num(video_file.name)
+                if ep_num == 0:
+                    ep_num = idx + 1
+                content_id = f"series-{title.lower().replace(' ', '_')}-s{season:02d}-e{ep_num:02d}"
+                display_title = f"{title} S{season:02d}E{ep_num:02d}"
+            else:
+                content_id = f"movie-{title.lower().replace(' ', '_')}"
+                display_title = title
+                
+            existing_content = db.query(Content).filter(Content.content_id == content_id).first()
+            if not existing_content:
+                db_content = Content(
+                    content_id=content_id,
+                    platform_id=platform or "unknown",
+                    title=display_title,
+                    content_type=content_type,
+                    series_name=title if content_type == "series" else None,
+                    season_number=season if content_type == "series" else None,
+                    episode_number=ep_num if content_type == "series" else None,
+                    language=language,
+                    genre=genre
+                )
+                db.add(db_content)
+                db.flush()
+                
+            cap = cv2.VideoCapture(str(video_file))
+            if not cap.isOpened():
+                continue
+                
+            fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = int(frame_count / fps)
+            
+            audio, sr = load_audio_via_ffmpeg(video_file)
+            
+            start_sec = intro_duration if (content_type == "series" and intro_duration) else 0
+            for sec in range(start_sec, duration, SEGMENT_SECONDS):
+                segment_index = (sec - start_sec) // SEGMENT_SECONDS
+                
+                existing_seg = db.query(ContentSegment).filter(
+                    ContentSegment.content_id == content_id,
+                    ContentSegment.segment_index == segment_index
+                ).first()
+                if existing_seg:
+                    continue
+                    
+                frame_number = int(sec * fps)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+                ret, frame = cap.read()
+                if not ret:
+                    continue
+                    
+                visual_fp = DeepEmbeddingsExtractor.extract_visual(frame)
+                if len(visual_fp) != FAISS_VISUAL_DIM:
+                    continue
+                    
+                start_audio = sec * sr
+                end_audio = min(len(audio), (sec + SEGMENT_SECONDS) * sr)
+                audio_chunk = audio[start_audio:end_audio]
+                if len(audio_chunk) < 100:
+                    audio_chunk = np.zeros(sr * SEGMENT_SECONDS, dtype=np.float32)
+                    
+                audio_fp = UnifiedFingerprinter.audio_fingerprint(audio_chunk, sr)
+                if len(audio_fp) != FAISS_AUDIO_DIM:
+                    continue
+                    
+                db_item = ContentSegment(
+                    content_id=content_id,
+                    segment_index=segment_index,
+                    segment_offset=sec,
+                    visual_fp=json.dumps(visual_fp),
+                    audio_fp=json.dumps(audio_fp)
+                )
+                db.add(db_item)
+                db.flush()
+                
+                meta = {
+                    "content_id": content_id,
+                    "segment_index": segment_index,
+                    "segment_offset": sec
+                }
+                visual_idx.add(np.array(visual_fp, dtype=np.float32).reshape(1, -1), [meta])
+                audio_idx.add(np.array(audio_fp, dtype=np.float32).reshape(1, -1), [meta])
+                
+            cap.release()
+            db.commit()
+            
+        # Save updated FAISS indexes
+        visual_idx.save(str(VISUAL_INDEX_PATH), str(VISUAL_META_PATH))
+        audio_idx.save(str(AUDIO_INDEX_PATH), str(AUDIO_META_PATH))
+        
+        # Force reload in-memory FAISS indexes
+        force_reload_faiss_indexes()
+        db.close()
+        
+        with ingest_lock:
+            ingest_state["status"] = "completed"
+            ingest_state["percent"] = 100.0
+            ingest_state["time_remaining"] = 0.0
+            ingest_state["message"] = "Ingestion completed successfully."
+            
+    except Exception as ex:
+        if db:
+            db.rollback()
+            db.close()
+        with ingest_lock:
+            ingest_state["status"] = "failed"
+            ingest_state["message"] = f"Error during ingestion: {str(ex)}"
+
+@app.post("/api/v1/ingest/scan")
+def scan_ingest_path(payload: IngestScanPayload):
+    p = Path(payload.path)
+    if not p.exists():
+        raise HTTPException(status_code=400, detail=f"Path '{payload.path}' does not exist on the server.")
+        
+    video_extensions = (".mp4", ".mkv", ".avi", ".mov", ".flv", ".webm")
+    video_files = []
+    if p.is_file():
+        if p.suffix.lower() in video_extensions:
+            video_files.append(p)
+    else:
+        for file in p.rglob("*"):
+            if file.is_file() and file.suffix.lower() in video_extensions:
+                video_files.append(file)
+                
+    total_files = len(video_files)
+    # Estimate time required (approx 20 seconds per video file as a safe average)
+    est_seconds = total_files * 20
+    
+    return {
+        "path": str(p),
+        "total_files": total_files,
+        "est_seconds": est_seconds
+    }
+
+@app.post("/api/v1/ingest/start")
+def start_ingest_path(payload: IngestStartPayload):
+    global ingest_state
+    with ingest_lock:
+        if ingest_state["status"] == "ingesting":
+            raise HTTPException(status_code=400, detail="Another ingestion process is currently running.")
+        ingest_state = {
+            "status": "scanning",
+            "message": "Initializing background ingestion task...",
+            "current_file": "",
+            "current_index": 0,
+            "total_files": 0,
+            "percent": 0.0,
+            "time_elapsed": 0.0,
+            "time_remaining": 0.0,
+            "start_time": 0.0
+        }
+        
+    t = threading.Thread(
+        target=bg_ingest_worker,
+        args=(
+            payload.path,
+            payload.content_type,
+            payload.title,
+            payload.season,
+            payload.platform,
+            payload.intro_duration,
+            payload.language,
+            payload.genre
+        ),
+        daemon=True
+    )
+    t.start()
+    return {"status": "success", "message": "Background ingestion process started successfully"}
+
+@app.get("/api/v1/ingest/status")
+def get_ingest_status():
+    global ingest_state
+    with ingest_lock:
+        return ingest_state
+
+@app.get("/api/v1/ingest/series-suggest")
+def get_series_suggestions(db: Session = Depends(get_db)):
+    # Query distinct series names from registered content
+    results = db.query(Content.series_name, Content.content_type, Content.platform_id).filter(Content.series_name != None).distinct().all()
+    suggestions = []
+    seen = set()
+    for row in results:
+        if row.series_name and row.series_name not in seen:
+            seen.add(row.series_name)
+            suggestions.append({
+                "series_name": row.series_name,
+                "content_type": row.content_type,
+                "platform_id": row.platform_id
+            })
+    return suggestions
+
+
+@app.post("/api/v1/matching/reload")
+def reload_matching_indexes():
+    from content_platform.server.matching import force_reload_faiss_indexes
+    force_reload_faiss_indexes()
+    return {"status": "success", "message": "FAISS indexes hot-reload scheduled"}
 
 
 @app.get("/api/v1/events")

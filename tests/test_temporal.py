@@ -222,3 +222,179 @@ def test_temporal_smoothing() -> None:
         db.delete(device)
         db.commit()
 
+
+def test_consecutive_confirmation_filter() -> None:
+    from content_platform.server.temporal import smooth_recent_captures_for_device
+
+    with TestSessionLocal() as db:
+        device_id = "TEST_DEVICE_CONSECUTIVE_99"
+        
+        # Clean up any residual data first
+        db.query(PlaybackSession).filter(PlaybackSession.device_id == device_id).delete()
+        old_device = db.query(Device).filter(Device.device_id == device_id).first()
+        if old_device:
+            db.query(Capture).filter(Capture.device_id == old_device.id).delete()
+            db.delete(old_device)
+        db.commit()
+
+        device = Device(device_id=device_id, status="active")
+        db.add(device)
+        db.flush()
+
+        base_time = datetime.now(UTC)
+
+        # Helper to add a capture with match
+        def add_capture(offset_seconds: int, content_name: str, content_type: str, confidence: float = 0.8) -> RecognitionResultRecord:
+            cap = Capture(
+                device_id=device.id,
+                captured_at=base_time + timedelta(seconds=offset_seconds),
+                visual_fp="[]",
+                audio_fp="[]",
+                status="matched"
+            )
+            db.add(cap)
+            db.flush()
+
+            result = RecognitionResultRecord(
+                capture_id=cap.id,
+                content_name=content_name,
+                content_type=content_type,
+                confidence=confidence,
+                visual_score=confidence,
+                audio_score=confidence,
+                ocr_score=0.0,
+                logo_score=0.0
+            )
+            db.add(result)
+            db.flush()
+            return result
+
+        # Sequence of captures:
+        # 0: Unknown Content
+        # 1: Goyamart (run of 2, ended)
+        # 2: Goyamart (run of 2, ended)
+        # 3: Unknown Content
+        # 4: Urishi (run of 1, active at the end of the sequence)
+        add_capture(0, "Unknown Content", "unknown")
+        add_capture(10, "Goyamart S01E92", "series")
+        add_capture(20, "Goyamart S01E92", "series")
+        add_capture(30, "Unknown Content", "unknown")
+        add_capture(40, "Urishi Yntaniqy S01E76", "series")
+        
+        db.commit()
+
+        # Run smoothing
+        smooth_recent_captures_for_device(db, device_id, window_size=5)
+
+        # Retrieve the updated records
+        db_records = (
+            db.query(RecognitionResultRecord)
+            .join(Capture, Capture.id == RecognitionResultRecord.capture_id)
+            .filter(Capture.device_id == device.id)
+            .order_by(Capture.captured_at.asc())
+            .all()
+        )
+
+        # The Goyamart run (indices 1 and 2) had length 2 < 3 and ended (index 3 is Unknown), so it should be reverted
+        assert db_records[1].content_name == "Unknown Content"
+        assert db_records[2].content_name == "Unknown Content"
+
+        # The Urishi run (index 4) had length 1 < 3 but was at the end of the list, so it should NOT be reverted yet (active run)
+        assert db_records[4].content_name == "Urishi Yntaniqy S01E76"
+
+        # Cleanup
+        db.query(PlaybackSession).filter(PlaybackSession.device_id == device_id).delete()
+        capture_ids = [c.id for c in db.query(Capture).filter(Capture.device_id == device.id).all()]
+        db.query(RecognitionResultRecord).filter(RecognitionResultRecord.capture_id.in_(capture_ids)).delete(synchronize_session=False)
+        db.query(Capture).filter(Capture.device_id == device.id).delete()
+        db.delete(device)
+        db.commit()
+
+
+def test_temporal_smoothing_gap_fill() -> None:
+    from content_platform.server.temporal import smooth_recent_captures_for_device
+
+    with TestSessionLocal() as db:
+        device_id = "TEST_DEVICE_GAP_FILL_99"
+        
+        # Clean up any residual data first
+        db.query(PlaybackSession).filter(PlaybackSession.device_id == device_id).delete()
+        old_device = db.query(Device).filter(Device.device_id == device_id).first()
+        if old_device:
+            db.query(Capture).filter(Capture.device_id == old_device.id).delete()
+            db.delete(old_device)
+        db.commit()
+
+        device = Device(device_id=device_id, status="active")
+        db.add(device)
+        db.flush()
+
+        base_time = datetime.now(UTC)
+
+        def add_capture(offset_seconds: int, content_name: str, content_type: str, confidence: float = 0.8) -> RecognitionResultRecord:
+            cap = Capture(
+                device_id=device.id,
+                captured_at=base_time + timedelta(seconds=offset_seconds),
+                visual_fp="[]",
+                audio_fp="[]",
+                status="matched"
+            )
+            db.add(cap)
+            db.flush()
+
+            result = RecognitionResultRecord(
+                capture_id=cap.id,
+                content_name=content_name,
+                content_type=content_type,
+                confidence=confidence,
+                visual_score=confidence,
+                audio_score=confidence,
+                ocr_score=0.0,
+                logo_score=0.0
+            )
+            db.add(result)
+            db.flush()
+            return result
+
+        # Sequence of captures at 1-second intervals:
+        # Index 0: Goyamart S01E38
+        # Index 1: Unknown Content
+        # Index 2: Goyamart S01E38
+        # Index 3: Urishi Yntaniqy S01E76 (false entry)
+        # Index 4: Goyamart S01E38
+        # Index 5: Goyamart S01E38
+        add_capture(0, "Goyamart S01E38", "series")
+        add_capture(1, "Unknown Content", "unknown")
+        add_capture(2, "Goyamart S01E38", "series")
+        add_capture(3, "Urishi Yntaniqy S01E76", "series")
+        add_capture(4, "Goyamart S01E38", "series")
+        add_capture(5, "Goyamart S01E38", "series")
+        
+        db.commit()
+
+        # Run smoothing
+        smooth_recent_captures_for_device(db, device_id, window_size=5)
+
+        # Retrieve the updated records
+        db_records = (
+            db.query(RecognitionResultRecord)
+            .join(Capture, Capture.id == RecognitionResultRecord.capture_id)
+            .filter(Capture.device_id == device.id)
+            .order_by(Capture.captured_at.asc())
+            .all()
+        )
+
+        # The unknown content at Index 1 and false entry at Index 3 should be smoothed to Goyamart S01E38
+        assert db_records[1].content_name == "Goyamart S01E38"
+        assert db_records[3].content_name == "Goyamart S01E38"
+
+        # Cleanup
+        db.query(PlaybackSession).filter(PlaybackSession.device_id == device_id).delete()
+        capture_ids = [c.id for c in db.query(Capture).filter(Capture.device_id == device.id).all()]
+        db.query(RecognitionResultRecord).filter(RecognitionResultRecord.capture_id.in_(capture_ids)).delete(synchronize_session=False)
+        db.query(Capture).filter(Capture.device_id == device.id).delete()
+        db.delete(device)
+        db.commit()
+
+
+

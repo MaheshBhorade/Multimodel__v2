@@ -158,12 +158,12 @@
               <h3>Real-Time Capture Log</h3>
               <span class="caption">Showing latest 100 captures from all units</span>
             </div>
-            <a href="/api/v1/captures/export" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px; text-decoration: none;">
+            <button id="btn-export-captures" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px;">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
               </svg>
               Export Captures
-            </a>
+            </button>
           </div>
           <div class="table-responsive">
             <table class="data-table" id="captures-table">
@@ -205,10 +205,14 @@
 
       <!-- TAB content: LIBRARY -->
       <section id="tab-library" class="tab-pane">
-        <div class="library-header">
+        <div class="library-header" style="display: flex; gap: 12px; margin-bottom: 20px;">
           <button class="btn btn-primary" id="btn-add-library">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 8px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Reference Entry
+          </button>
+          <button id="btn-ingest-local" class="btn btn-secondary" style="display: flex; align-items: center; gap: 8px; background: rgba(167, 139, 250, 0.1); border: 1px solid rgba(167, 139, 250, 0.3); color: #c084fc;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            Ingest Server Directory
           </button>
         </div>
         <div class="section-card">
@@ -346,12 +350,12 @@
               <h3>Aggregated Playback Sessions (Temporal Engine)</h3>
               <span class="caption">Grouped contiguous playback sessions based on temporal rules (12/10 thresholds)</span>
             </div>
-            <a href="/api/v1/analytics/sessions/export" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px; text-decoration: none;">
+            <button id="btn-export-sessions" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 8px;">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
               </svg>
               Export Sessions
-            </a>
+            </button>
           </div>
           <div id="analytics-sessions" style="margin-top: 16px;">
             <div class="loading-state">Generating playback sessions report...</div>
@@ -406,6 +410,45 @@
     </div>
   </div>
 
+  <!-- Modal: Export Filter -->
+  <div class="modal-backdrop" id="export-modal">
+    <div class="modal" style="max-width: 450px;">
+      <div class="modal-header">
+        <h3 id="export-modal-title">Export Log Data</h3>
+        <button class="close-button" id="close-export-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="export-form" class="modal-form">
+          <input type="hidden" id="export-target-type" value="captures">
+          
+          <div class="form-group">
+            <label for="export-range-type">Date Range Option</label>
+            <select id="export-range-type" required style="width:100%; padding:8px; background:#1f2937; color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:4px;">
+              <option value="last_24h">Last 24 Hours</option>
+              <option value="last_7d">Last 7 Days</option>
+              <option value="custom">Custom Date Range</option>
+            </select>
+          </div>
+
+          <div id="export-custom-dates" style="display: none; margin-top: 12px;">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="export-start-date">Start Date & Time</label>
+                <input type="datetime-local" id="export-start-date" style="width:100%; padding:8px; background:#1f2937; color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:4px;">
+              </div>
+              <div class="form-group">
+                <label for="export-end-date">End Date & Time</label>
+                <input type="datetime-local" id="export-end-date" style="width:100%; padding:8px; background:#1f2937; color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:4px;">
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block" style="margin-top: 16px;">Download CSV File</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Add Content Library -->
   <div class="modal-backdrop" id="add-library-modal">
     <div class="modal">
@@ -454,6 +497,89 @@
             </div>
           </div>
           <button type="submit" class="btn btn-primary btn-block">Save to Content Library</button>
+        </form>
+    </div>
+  </div>
+
+  <!-- Modal for server-side video ingestion -->
+  <div class="modal-backdrop" id="ingest-backdrop">
+    <div class="modal" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3>Server-Side Video Ingestor</h3>
+        <button class="close-button" id="close-ingest-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="ingest-form">
+          <div class="form-group">
+            <label for="ingest-prefill">Auto-Fill from Previous Series</label>
+            <select id="ingest-prefill" style="width: 100%; padding: 8px; background: #1f2937; color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;">
+              <option value="">-- Select to Prefill Metadata --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label style="margin-bottom: 6px; display: block;">Ingestion Mode</label>
+            <div style="display: flex; gap: 24px; margin-bottom: 12px;">
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
+                <input type="radio" name="ingest-target-type" value="directory" checked style="accent-color: #a78bfa; width: 16px; height: 16px;">
+                Directory of Episodes (Series)
+              </label>
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
+                <input type="radio" name="ingest-target-type" value="file" style="accent-color: #a78bfa; width: 16px; height: 16px;">
+                Single Video File (Movie/Ad)
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="ingest-path" id="ingest-path-label">Server Directory Path</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="ingest-path" placeholder="e.g. F:\YT_content_data\Urishi Yntaniqy" style="flex: 1;" required>
+              <button type="button" class="btn btn-secondary" id="btn-ingest-scan" style="white-space: nowrap;">Scan Path</button>
+            </div>
+            <div id="ingest-scan-result" style="margin-top: 10px; padding: 10px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); display: none; font-size: 0.85rem;"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="ingest-title">Content / Series Title</label>
+              <input type="text" id="ingest-title" placeholder="e.g. Urishi Yntaniqy" required>
+            </div>
+            <div class="form-group">
+              <label for="ingest-type">Category</label>
+              <select id="ingest-type" required>
+                <option value="series">Series / Show</option>
+                <option value="movie">Movie</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" id="ingest-season-group">
+              <label for="ingest-season">Season Number (for Series)</label>
+              <input type="number" id="ingest-season" value="1" min="1">
+            </div>
+            <div class="form-group">
+              <label for="ingest-intro">Intro Skip Duration (seconds)</label>
+              <input type="number" id="ingest-intro" value="0" min="0">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="ingest-platform">Platform / Channel ID (Optional)</label>
+            <input type="text" id="ingest-platform" placeholder="e.g. unknown, youtube, shant_tv_armenia" value="unknown">
+          </div>
+          
+          <button type="submit" class="btn btn-primary btn-block" id="btn-ingest-submit">Start Ingestion</button>
+          
+          <!-- Live Progress Panel -->
+          <div id="ingest-progress-container" style="display: none; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+            <h4 style="margin-bottom: 8px; font-family: var(--font-heading);">Ingestion Progress</h4>
+            <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 16px; overflow: hidden; margin-bottom: 8px; position: relative;">
+              <div id="ingest-progress-bar" style="background: #10b981; width: 0%; height: 100%; transition: width 0.3s;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">
+              <span id="ingest-progress-text">0% (0/0 files)</span>
+              <span id="ingest-progress-eta">ETA: Calculating...</span>
+            </div>
+            <div id="ingest-progress-file" style="font-family: monospace; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
+            <div id="ingest-progress-status" style="font-weight: 500; font-size: 0.85rem; color: #a78bfa; word-break: break-all;"></div>
+          </div>
         </form>
       </div>
     </div>

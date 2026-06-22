@@ -183,7 +183,7 @@ def smooth_recent_captures_for_device(db: Session, device_id: str, window_size: 
             .options(joinedload(RecognitionResultRecord.capture))
             .filter(Device.device_id == device_id)
             .order_by(Capture.captured_at.desc())
-            .limit(40)
+            .limit(120)
             .all()
         )
         records.reverse()
@@ -251,44 +251,81 @@ def smooth_recent_captures_for_device(db: Session, device_id: str, window_size: 
                             )
             k += 1
 
-        # Pass 1.5: General Content/Episode Gap-Fill
-        last_known_idx = None
-        for idx, r in enumerate(records):
-            is_unknown = r.content_name in ("Matching in progress...", "Unknown Content", "unknown", "") or r.content_type == "unknown"
-            if not is_unknown:
-                if last_known_idx is not None:
-                    last_known_r = records[last_known_idx]
-                    if r.content_name == last_known_r.content_name:
-                        time_diff = (r.capture.captured_at - last_known_r.capture.captured_at).total_seconds()
-                        if time_diff <= 15.0:
-                            all_between_unknown = True
-                            for mid_idx in range(last_known_idx + 1, idx):
-                                mid_r = records[mid_idx]
-                                is_mid_unknown = mid_r.content_name in ("Matching in progress...", "Unknown Content", "unknown", "") or mid_r.content_type == "unknown"
-                                if not is_mid_unknown:
-                                    all_between_unknown = False
-                                    break
-                            
-                            if all_between_unknown:
-                                for mid_idx in range(last_known_idx + 1, idx):
-                                    mid_r = records[mid_idx]
-                                    mid_r.content_name = last_known_r.content_name
-                                    mid_r.content_type = last_known_r.content_type
-                                    mid_r.content_id = last_known_r.content_id
-                                    mid_r.series = last_known_r.series
-                                    mid_r.season = last_known_r.season
-                                    mid_r.episode = last_known_r.episode
-                                    mid_r.confidence = max(mid_r.confidence, last_known_r.confidence, 0.85)
-                                    mid_r.visual_score = max(mid_r.visual_score, last_known_r.visual_score)
-                                    mid_r.audio_score = max(mid_r.audio_score, last_known_r.audio_score)
-                                    mid_r.matched_platform = last_known_r.matched_platform
-                                    modified = True
-                                    logger.info(
-                                        "Content gap-fill (capture_id=%d): filled as '%s'",
-                                        mid_r.capture_id,
-                                        last_known_r.content_name
-                                    )
-                last_known_idx = idx
+        # Pass 1.5: Unified Gap-Fill (for Unknowns and transient False Matches)
+        # Identify any sequence of captures surrounded by the same known content A
+        # where the sequence has content != A, and fill them if the time gap is <= 15 seconds.
+        n_records = len(records)
+        idx = 1
+        MAX_GAP_SECONDS = 15.0
+        
+        while idx < n_records - 1:
+            r = records[idx]
+            # Find the preceding known content
+            left_idx = idx - 1
+            while left_idx >= 0:
+                r_left = records[left_idx]
+                is_left_unknown = r_left.content_name in ("Matching in progress...", "Unknown Content", "unknown", "") or r_left.content_type == "unknown"
+                if not is_left_unknown:
+                    break
+                left_idx -= 1
+                
+            if left_idx < 0:
+                idx += 1
+                continue
+                
+            left_content_name = records[left_idx].content_name
+            
+            # Find where the run of "not left_content_name" ends
+            right_idx = idx
+            while right_idx < n_records:
+                r_right = records[right_idx]
+                if r_right.content_name == left_content_name:
+                    break
+                right_idx += 1
+                
+            if right_idx >= n_records:
+                idx += 1
+                continue
+                
+            gap_duration = (records[right_idx].capture.captured_at - records[left_idx].capture.captured_at).total_seconds()
+            
+            if gap_duration <= MAX_GAP_SECONDS and (right_idx - left_idx) > 1:
+                rec_before = records[left_idx]
+                for fill_idx in range(left_idx + 1, right_idx):
+                    r_fill = records[fill_idx]
+                    
+                    logger.info(
+                        "Unified temporal smoothing gap-fill (capture_id=%d): '%s' -> '%s' (gap duration: %.1fs)",
+                        r_fill.capture_id,
+                        r_fill.content_name,
+                        left_content_name,
+                        gap_duration
+                    )
+                    
+                    r_fill.content_name = rec_before.content_name
+                    r_fill.content_type = rec_before.content_type
+                    r_fill.content_id = rec_before.content_id
+                    r_fill.series = rec_before.series
+                    r_fill.season = rec_before.season
+                    r_fill.episode = rec_before.episode
+                    
+                    r_fill.confidence = max(r_fill.confidence, rec_before.confidence, 0.85)
+                    r_fill.visual_score = max(r_fill.visual_score, rec_before.visual_score)
+                    r_fill.audio_score = max(r_fill.audio_score, rec_before.audio_score)
+                    r_fill.ocr_score = max(r_fill.ocr_score, rec_before.ocr_score)
+                    r_fill.logo_score = max(r_fill.logo_score, rec_before.logo_score)
+                    
+                    if rec_before.matched_platform and rec_before.matched_platform != "unknown":
+                        r_fill.matched_platform = rec_before.matched_platform
+                    if rec_before.matched_channel and rec_before.matched_channel != "unknown":
+                        r_fill.matched_channel = rec_before.matched_channel
+                        
+                    modified = True
+                
+                idx = right_idx
+            else:
+                idx += 1
+
 
         # Pass 2: Transient/Flickering Smoothing
         if len(records) >= window_size:
@@ -303,39 +340,41 @@ def smooth_recent_captures_for_device(db: Session, device_id: str, window_size: 
                     name = r.content_name
                     is_unknown = name in ("Matching in progress...", "Unknown Content", "unknown", "") or r.content_type == "unknown"
                     if is_unknown:
-                        continue
+                        name = "Unknown Content"
+                    
                     counts[name] = counts.get(name, 0) + 1
-                    if name not in content_details:
-                        content_details[name] = {
-                            "type": r.content_type,
-                            "content_id": r.content_id,
-                            "series": r.series,
-                            "season": r.season,
-                            "episode": r.episode,
-                            "confidences": [],
-                            "vis_scores": [],
-                            "aud_scores": [],
-                            "ocr_scores": [],
-                            "logo_scores": [],
-                            "platforms": []
-                        }
-                    else:
-                        if content_details[name]["content_id"] is None and r.content_id is not None:
-                            content_details[name]["content_id"] = r.content_id
-                        if content_details[name]["series"] is None and r.series is not None:
-                            content_details[name]["series"] = r.series
-                        if content_details[name]["season"] is None and r.season is not None:
-                            content_details[name]["season"] = r.season
-                        if content_details[name]["episode"] is None and r.episode is not None:
-                            content_details[name]["episode"] = r.episode
-                            
-                    content_details[name]["confidences"].append(r.confidence)
-                    content_details[name]["vis_scores"].append(r.visual_score)
-                    content_details[name]["aud_scores"].append(r.audio_score)
-                    content_details[name]["ocr_scores"].append(r.ocr_score)
-                    content_details[name]["logo_scores"].append(r.logo_score)
-                    if r.matched_platform and r.matched_platform != "unknown":
-                        content_details[name]["platforms"].append(r.matched_platform)
+                    if name != "Unknown Content":
+                        if name not in content_details:
+                            content_details[name] = {
+                                "type": r.content_type,
+                                "content_id": r.content_id,
+                                "series": r.series,
+                                "season": r.season,
+                                "episode": r.episode,
+                                "confidences": [],
+                                "vis_scores": [],
+                                "aud_scores": [],
+                                "ocr_scores": [],
+                                "logo_scores": [],
+                                "platforms": []
+                            }
+                        else:
+                            if content_details[name]["content_id"] is None and r.content_id is not None:
+                                content_details[name]["content_id"] = r.content_id
+                            if content_details[name]["series"] is None and r.series is not None:
+                                content_details[name]["series"] = r.series
+                            if content_details[name]["season"] is None and r.season is not None:
+                                content_details[name]["season"] = r.season
+                            if content_details[name]["episode"] is None and r.episode is not None:
+                                content_details[name]["episode"] = r.episode
+                                
+                        content_details[name]["confidences"].append(r.confidence)
+                        content_details[name]["vis_scores"].append(r.visual_score)
+                        content_details[name]["aud_scores"].append(r.audio_score)
+                        content_details[name]["ocr_scores"].append(r.ocr_score)
+                        content_details[name]["logo_scores"].append(r.logo_score)
+                        if r.matched_platform and r.matched_platform != "unknown":
+                            content_details[name]["platforms"].append(r.matched_platform)
 
                 if not counts:
                     continue
@@ -346,43 +385,106 @@ def smooth_recent_captures_for_device(db: Session, device_id: str, window_size: 
                 majority_threshold = (window_size // 2) + 1
                 if dominant_count >= majority_threshold:
                     if center.content_name != dominant_name:
-                        details = content_details[dominant_name]
-                        avg_conf = sum(details["confidences"]) / len(details["confidences"])
-                        avg_vis = sum(details["vis_scores"]) / len(details["vis_scores"])
-                        avg_aud = sum(details["aud_scores"]) / len(details["aud_scores"])
-                        avg_ocr = sum(details["ocr_scores"]) / len(details["ocr_scores"])
-                        avg_logo = sum(details["logo_scores"]) / len(details["logo_scores"])
-                        
-                        boosted_conf = max(center.confidence, avg_conf, 0.85)
-                        
-                        logger.info(
-                            "Smoothing transient match (capture_id=%d): '%s' -> '%s' (confidence boosted to %.2f)",
-                            center.capture_id,
-                            center.content_name,
-                            dominant_name,
-                            boosted_conf
-                        )
-                        
-                        center.content_name = dominant_name
-                        center.content_type = details["type"]
-                        center.content_id = details["content_id"]
-                        center.series = details["series"]
-                        center.season = details["season"]
-                        center.episode = details["episode"]
-                        
-                        center.confidence = boosted_conf
-                        center.visual_score = max(center.visual_score, avg_vis)
-                        center.audio_score = max(center.audio_score, avg_aud)
-                        center.ocr_score = max(center.ocr_score, avg_ocr)
-                        center.logo_score = max(center.logo_score, avg_logo)
-                        if details["platforms"]:
-                            center.matched_platform = details["platforms"][0]
-                        else:
+                        if dominant_name == "Unknown Content":
+                            logger.info(
+                                "Smoothing transient match to Unknown (capture_id=%d): '%s' -> 'Unknown Content'",
+                                center.capture_id,
+                                center.content_name
+                            )
+                            center.content_name = "Unknown Content"
+                            center.content_type = "unknown"
+                            center.content_id = None
+                            center.series = None
+                            center.season = None
+                            center.episode = None
                             center.matched_platform = "unknown"
-                        modified = True
+                            modified = True
+                        else:
+                            details = content_details[dominant_name]
+                            avg_conf = sum(details["confidences"]) / len(details["confidences"])
+                            avg_vis = sum(details["vis_scores"]) / len(details["vis_scores"])
+                            avg_aud = sum(details["aud_scores"]) / len(details["aud_scores"])
+                            avg_ocr = sum(details["ocr_scores"]) / len(details["ocr_scores"])
+                            avg_logo = sum(details["logo_scores"]) / len(details["logo_scores"])
+                            
+                            boosted_conf = max(center.confidence, avg_conf, 0.85)
+                            
+                            logger.info(
+                                "Smoothing transient match (capture_id=%d): '%s' -> '%s' (confidence boosted to %.2f)",
+                                center.capture_id,
+                                center.content_name,
+                                dominant_name,
+                                boosted_conf
+                            )
+                            
+                            center.content_name = dominant_name
+                            center.content_type = details["type"]
+                            center.content_id = details["content_id"]
+                            center.series = details["series"]
+                            center.season = details["season"]
+                            center.episode = details["episode"]
+                            
+                            center.confidence = boosted_conf
+                            center.visual_score = max(center.visual_score, avg_vis)
+                            center.audio_score = max(center.audio_score, avg_aud)
+                            center.ocr_score = max(center.ocr_score, avg_ocr)
+                            center.logo_score = max(center.logo_score, avg_logo)
+                            if details["platforms"]:
+                                center.matched_platform = details["platforms"][0]
+                            else:
+                                center.matched_platform = "unknown"
+                            modified = True
+
+        # Pass 3: Consecutive Confirmation Filter
+        # Revert any run of known content that is shorter than MIN_CONSECUTIVE to "Unknown Content",
+        # unless it is at the very end of the records list (active run).
+        MIN_CONSECUTIVE = 3
+        n = len(records)
+        i = 0
+        while i < n:
+            r = records[i]
+            is_unknown = r.content_name in ("Matching in progress...", "Unknown Content", "unknown", "") or r.content_type == "unknown"
+            if is_unknown:
+                i += 1
+                continue
+            
+            # Start of a run of known content
+            run_name = r.content_name
+            run_indices = [i]
+            j = i + 1
+            while j < n:
+                r_next = records[j]
+                is_next_unknown = r_next.content_name in ("Matching in progress...", "Unknown Content", "unknown", "") or r_next.content_type == "unknown"
+                if is_next_unknown or r_next.content_name != run_name:
+                    break
+                run_indices.append(j)
+                j += 1
+            
+            # Revert if shorter than threshold and has ended (not extending to the latest capture n-1)
+            if len(run_indices) < MIN_CONSECUTIVE and run_indices[-1] < n - 1:
+                for idx in run_indices:
+                    r_revert = records[idx]
+                    logger.info(
+                        "Reverting short run of '%s' (length %d < %d) at capture_id=%d to Unknown Content",
+                        run_name,
+                        len(run_indices),
+                        MIN_CONSECUTIVE,
+                        r_revert.capture_id
+                    )
+                    r_revert.content_name = "Unknown Content"
+                    r_revert.content_type = "unknown"
+                    r_revert.content_id = None
+                    r_revert.series = None
+                    r_revert.season = None
+                    r_revert.episode = None
+                    r_revert.matched_platform = "unknown"
+                    modified = True
+            
+            i = j
 
         if modified:
             db.commit()
     except Exception as e:
         logger.exception("Failed to smooth recognition results: %s", e)
+
 
